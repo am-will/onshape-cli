@@ -101,10 +101,9 @@ variables, create/delete part studio, delete-feature.
 **Notes:** patterns need a real edge for `--direction-ids`/`--axis-ids` (from
 `get-edges`). `revolve` and `offset-plane` are experimental — their payloads are
 spec-shaped but may still be rejected on regen; check the returned
-`featureStatus`. `create-document`/`delete-document` require an API key with
-document-management permission (Onshape returns **HTTP 403** otherwise) — if you
-hit that, create the document in the Onshape UI and pass its `--doc`/`--ws`, or
-work inside an existing document.
+`featureStatus`. `create-document`/`delete-document` work, but **free Onshape
+accounts can only create *public* documents** — pass `--public` (a private
+document returns **HTTP 409**); paid accounts can create private docs too.
 
 ## Development
 

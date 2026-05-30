@@ -63,10 +63,10 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
   `find-part-studios --doc D --ws W [--name PAT]`
 - `get-parts`, `get-features`, `get-body-details`, `get-assembly`
 - `get-variables`, `set-variable --name x --expression "1 in"`
-- `create-document --name "X" [--public]`, `delete-document --doc D`
-  — ⚠️ **require an API key with document-management permission; Onshape returns
-  HTTP 403 otherwise.** If you get 403, do NOT keep retrying: create the document
-  in the Onshape UI (or use an existing one) and pass its `--doc`/`--ws`.
+- `create-document --name "X" --public`, `delete-document --doc D`
+  — new/delete a document. ⚠️ **Free Onshape accounts can only create PUBLIC
+  documents — always pass `--public`; a private document returns HTTP 409.**
+  `create-document` returns `result.id` and `result.defaultWorkspace.id`.
 
 ### Part studio management
 `create-part-studio --name "X"` (returns `result.response.id`),
@@ -105,9 +105,9 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 ## 4. Worked example — existing document → part → STL
 
 ```bash
-# Pick an existing document/workspace (programmatic create-document needs a
-# doc-management key; if create-document returns 403, work in an existing doc).
-onshape-cli list-documents --limit 10        # choose a doc + workspace
+# Create a new public document (free accounts must use --public), or use an
+# existing one (list-documents). Returns result.id + result.defaultWorkspace.id.
+onshape-cli create-document --name "Part" --public   # -> DOC + WS
 DOC=...; WS=...
 ELEM=$(onshape-cli create-part-studio --doc $DOC --ws $WS --name "Part" | jq -r .result.response.id)
 
@@ -127,8 +127,10 @@ boolean (union), mirror, linear-pattern, circular-pattern, get-edges,
 find-edges-by-feature, mass-properties, export-stl, export STEP, all discovery,
 variables, delete-feature, delete-element.
 
-**Needs key scope:** `create-document` / `delete-document` work only with an API
-key that has document-management permission (else HTTP 403).
+**Documents (free-account note):** `create-document`/`delete-document` are
+verified working **with `--public`**. On a free Onshape account a *private*
+document (the default) returns HTTP 409 — always pass `--public`. Paid accounts
+can create private docs too.
 
 **Patterns need a real edge** for `--direction-ids`/`--axis-ids` (from
 `get-edges`); a construction-line query won't resolve.

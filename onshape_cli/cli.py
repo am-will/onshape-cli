@@ -129,6 +129,11 @@ async def run(args) -> None:
             emit(await docs.get_document(args.doc))
         elif cmd == "get-document-summary":
             emit(await docs.get_document_summary(args.doc))
+        elif cmd == "create-document":
+            emit(await docs.create_document(args.name, is_public=args.public,
+                                            description=args.description))
+        elif cmd == "delete-document":
+            emit(await docs.delete_document(args.doc))
         elif cmd == "get-elements":
             doc, ws, _ = dwe(args)
             emit(await docs.get_elements(doc, ws, element_type=args.type))
