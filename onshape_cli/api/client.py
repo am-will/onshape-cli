@@ -159,9 +159,45 @@ class OnshapeClient:
                 )
 
         response.raise_for_status()
-        result = response.json()
+        if not response.content:
+            return {"ok": True, "status": response.status_code}
+        try:
+            result = response.json()
+        except Exception:
+            return {"ok": True, "status": response.status_code, "text": response.text[:500]}
         logger.debug(f"POST {url} response: {self._sanitize_for_logging(result, max_length=500)}")
         return result
+
+    async def patch(
+        self,
+        path: str,
+        data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Make a PATCH request to Onshape API (used for assembly/metadata updates)."""
+        url = f"{self.base_url}{path}"
+        headers = {
+            "Authorization": self._get_auth_header(),
+            "Accept": "application/json;charset=UTF-8; qs=0.09",
+            "Content-Type": "application/json;charset=UTF-8; qs=0.09",
+        }
+        self._ensure_client()
+        response = await self._client.patch(url, json=data, params=params, headers=headers)
+        if response.status_code >= 400:
+            try:
+                logger.error(
+                    f"PATCH {url} failed {response.status_code}: "
+                    f"{self._sanitize_for_logging(response.json())}"
+                )
+            except Exception:
+                logger.error(f"PATCH {url} failed {response.status_code}: {response.text[:500]}")
+        response.raise_for_status()
+        if not response.content:
+            return {"updated": True, "status": response.status_code}
+        try:
+            return response.json()
+        except Exception:
+            return {"updated": True, "status": response.status_code}
 
     async def delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a DELETE request to Onshape API.

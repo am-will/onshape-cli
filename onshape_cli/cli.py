@@ -41,6 +41,11 @@ from .api.partstudio import PartStudioManager
 from .api.variables import VariableManager
 from .api.edges import EdgeQuery
 from .api.export import ExportManager
+from .api.assemblies import AssemblyManager
+from .api.configurations import ConfigurationManager
+from .api.drawings import DrawingManager
+from .api.metadata import MetadataManager
+from .api.featurestudio import FeatureStudioManager
 from .builders.sketch import SketchBuilder, SketchPlane
 from .builders.extrude import ExtrudeBuilder, ExtrudeType
 from .builders.thicken import ThickenBuilder
@@ -115,7 +120,19 @@ async def run(args) -> None:
         variables = VariableManager(client)
         edges = EdgeQuery(client)
         exporter = ExportManager(client)
+        asm = AssemblyManager(client)
+        configs = ConfigurationManager(client)
+        drawings = DrawingManager(client)
+        meta = MetadataManager(client)
+        fstudio = FeatureStudioManager(client)
         cmd = args.command
+
+        def _load_json(inline, file_attr):
+            """Load JSON from an inline string or a file path."""
+            raw = inline
+            if file_attr:
+                raw = Path(file_attr).read_text()
+            return json.loads(raw)
 
         # ---- Discovery ----
         if cmd == "list-documents":
@@ -145,13 +162,33 @@ async def run(args) -> None:
             emit(await ps.get_parts(doc, ws, elem))
         elif cmd == "get-features":
             doc, ws, elem = dwe(args)
-            emit(await ps.get_features(doc, ws, elem))
+            emit(await ps.get_features(doc, ws, elem,
+                                      configuration=getattr(args, "configuration", None)))
+        elif cmd == "get-feature-specs":
+            doc, ws, elem = dwe(args)
+            emit(await ps.get_feature_specs(doc, ws, elem))
+        elif cmd == "get-sketch-info":
+            doc, ws, elem = dwe(args)
+            emit(await ps.get_sketch_info(doc, ws, elem, sketch_id=args.sketch))
         elif cmd == "get-assembly":
             doc, ws, elem = dwe(args)
             emit(await docs.get_assembly(doc, ws, elem))
         elif cmd == "get-body-details":
             doc, ws, elem = dwe(args)
             emit(await ps.get_body_details(doc, ws, elem))
+
+        # ---- Document versioning / metadata ----
+        elif cmd == "update-document":
+            emit(await docs.update_document(args.doc, name=args.name,
+                                            description=args.description))
+        elif cmd == "list-versions":
+            emit(await docs.get_versions(args.doc))
+        elif cmd == "create-version":
+            doc, ws, _ = dwe(args)
+            emit(await docs.create_version(doc, ws, args.name,
+                                           description=args.description))
+        elif cmd == "get-workspaces":
+            emit(await docs.get_workspaces(args.doc))
 
         # ---- Variables ----
         elif cmd == "get-variables":
@@ -292,19 +329,155 @@ async def run(args) -> None:
             doc, ws, elem = dwe(args)
             emit(await edges.find_edges_by_feature(doc, ws, elem, args.feature))
 
+        # ---- Raw feature access (power tools) ----
+        elif cmd == "add-feature":
+            doc, ws, elem = dwe(args)
+            feature = _load_json(args.json, args.json_file)
+            resp = await ps.add_feature(doc, ws, elem, feature)
+            emit({"featureId": new_feature_id(resp), "response": resp})
+        elif cmd == "update-feature":
+            doc, ws, elem = dwe(args)
+            feature = _load_json(args.json, args.json_file)
+            emit(await ps.update_feature(doc, ws, elem, args.feature, feature))
+        elif cmd == "rollback":
+            doc, ws, elem = dwe(args)
+            emit(await ps.set_rollback(doc, ws, elem, args.index))
+        elif cmd == "draft":
+            doc, ws, elem = dwe(args)
+            feat = adv.build_draft(name=args.name, angle=args.angle,
+                                   neutral_plane_query=args.neutral,
+                                   face_query=args.faces)
+            resp = await ps.add_feature(doc, ws, elem, feat)
+            emit({"featureId": new_feature_id(resp), "response": resp})
+
+        # ---- Configurations ----
+        elif cmd == "get-configuration":
+            doc, ws, elem = dwe(args)
+            emit(await configs.get_configuration(doc, ws, elem))
+        elif cmd == "encode-configuration":
+            doc, ws, elem = dwe(args)
+            params = _load_json(args.params, args.params_file)
+            emit(await configs.encode_configuration(doc, elem, params))
+
+        # ---- Assemblies (write) ----
+        elif cmd == "create-assembly":
+            doc, ws, _ = dwe(args)
+            emit(await asm.create_assembly(doc, ws, args.name))
+        elif cmd == "insert-instance":
+            doc, ws, elem = dwe(args)
+            emit(await asm.insert_instance(
+                doc, ws, elem,
+                source_document_id=args.src_doc or doc,
+                source_element_id=args.src_elem,
+                part_id=args.part,
+                source_version_id=args.src_version,
+                is_assembly=args.is_assembly,
+                is_whole_part_studio=args.whole_studio,
+                configuration=args.configuration))
+        elif cmd == "get-assembly-features":
+            doc, ws, elem = dwe(args)
+            emit(await asm.get_features(doc, ws, elem))
+        elif cmd == "assembly-add-feature":
+            doc, ws, elem = dwe(args)
+            feature = _load_json(args.json, args.json_file)
+            emit(await asm.add_feature(doc, ws, elem, feature))
+        elif cmd == "assembly-mate-connector":
+            doc, ws, elem = dwe(args)
+            feat = adv.build_assembly_mate_connector(
+                name=args.name, occurrence_id=args.occurrence,
+                inference_type=args.inference)
+            resp = await asm.add_feature(doc, ws, elem, feat)
+            emit({"featureId": new_feature_id(resp), "response": resp})
+        elif cmd == "assembly-mate":
+            doc, ws, elem = dwe(args)
+            feat = adv.build_assembly_mate(
+                name=args.name, mate_type=args.type,
+                mate_connector_ids=_split(args.connectors))
+            resp = await asm.add_feature(doc, ws, elem, feat)
+            emit({"featureId": new_feature_id(resp), "response": resp})
+        elif cmd == "assembly-group":
+            doc, ws, elem = dwe(args)
+            feat = adv.build_assembly_group(
+                name=args.name, occurrence_ids=_split(args.occurrences))
+            resp = await asm.add_feature(doc, ws, elem, feat)
+            emit({"featureId": new_feature_id(resp), "response": resp})
+        elif cmd == "get-bom":
+            doc, ws, elem = dwe(args)
+            emit(await asm.get_bom(doc, ws, elem, multi_level=args.multi_level))
+        elif cmd == "assembly-mass-properties":
+            doc, ws, elem = dwe(args)
+            emit(await asm.mass_properties(doc, ws, elem))
+        elif cmd == "delete-instance":
+            doc, ws, elem = dwe(args)
+            emit(await asm.delete_instance(doc, ws, elem, args.node))
+        elif cmd == "transform-instance":
+            doc, ws, elem = dwe(args)
+            paths = _load_json(args.paths, None)
+            transform = _load_json(args.transform, None)
+            emit(await asm.transform_occurrences(doc, ws, elem, paths, transform,
+                                                 is_relative=not args.absolute))
+
+        # ---- Drawings ----
+        elif cmd == "create-drawing":
+            doc, ws, _ = dwe(args)
+            emit(await drawings.create_drawing(
+                doc, ws, name=args.name, source_element_id=args.src_elem,
+                source_version_id=args.src_version, source_document_id=args.src_doc,
+                part_id=args.part))
+        elif cmd == "get-drawing-views":
+            doc, ws, elem = dwe(args)
+            emit(await drawings.get_views(doc, ws, elem))
+        elif cmd == "export-drawing":
+            doc, ws, elem = dwe(args)
+            path = await exporter.export_translation(
+                doc, ws, elem, args.out, format_name=args.format,
+                element_kind="drawings")
+            emit({"written": path, "format": args.format})
+
+        # ---- Metadata ----
+        elif cmd == "get-metadata":
+            doc, ws, elem = dwe(args)
+            if args.part:
+                emit(await meta.get_part_metadata(doc, ws, elem, args.part))
+            else:
+                emit(await meta.get_element_metadata(doc, ws, elem))
+        elif cmd == "set-metadata":
+            doc, ws, elem = dwe(args)
+            properties = _load_json(args.properties, args.properties_file)
+            emit(await meta.set_element_metadata(doc, ws, elem, properties,
+                                                 part_id=args.part))
+
+        # ---- Feature Studio (custom FeatureScript) ----
+        elif cmd == "create-feature-studio":
+            doc, ws, _ = dwe(args)
+            emit(await fstudio.create(doc, ws, args.name))
+        elif cmd == "get-feature-studio":
+            doc, ws, elem = dwe(args)
+            emit(await fstudio.get_contents(doc, ws, elem))
+        elif cmd == "set-feature-studio":
+            doc, ws, elem = dwe(args)
+            contents = args.contents
+            if args.contents_file:
+                contents = Path(args.contents_file).read_text()
+            emit(await fstudio.set_contents(doc, ws, elem, contents))
+
         # ---- Export & analysis ----
         elif cmd == "mass-properties":
             doc, ws, elem = dwe(args)
-            emit(await exporter.mass_properties(doc, ws, elem))
+            emit(await exporter.mass_properties(doc, ws, elem,
+                                                configuration=args.configuration))
         elif cmd == "export-stl":
             doc, ws, elem = dwe(args)
             path = await exporter.export_stl(doc, ws, elem, args.out,
-                                             binary=not args.ascii, resolution=args.resolution)
+                                             binary=not args.ascii, resolution=args.resolution,
+                                             configuration=args.configuration)
             emit({"written": path})
         elif cmd == "export":
             doc, ws, elem = dwe(args)
             path = await exporter.export_translation(doc, ws, elem, args.out,
-                                                     format_name=args.format)
+                                                     format_name=args.format,
+                                                     element_kind=args.kind,
+                                                     configuration=args.configuration)
             emit({"written": path, "format": args.format})
         else:
             emit_error(f"Unknown command: {cmd}")
@@ -393,9 +566,96 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("get-elements"); add_dwe(s, elem=False); s.add_argument("--type")
     s = sub.add_parser("find-part-studios"); add_dwe(s, elem=False); s.add_argument("--name")
     s = sub.add_parser("get-parts"); add_dwe(s)
-    s = sub.add_parser("get-features"); add_dwe(s)
+    s = sub.add_parser("get-features"); add_dwe(s); s.add_argument("--configuration")
+    s = sub.add_parser("get-feature-specs"); add_dwe(s)
+    s = sub.add_parser("get-sketch-info"); add_dwe(s); s.add_argument("--sketch")
     s = sub.add_parser("get-assembly"); add_dwe(s)
     s = sub.add_parser("get-body-details"); add_dwe(s)
+
+    # Document versioning
+    s = sub.add_parser("update-document"); s.add_argument("--doc", required=True)
+    s.add_argument("--name"); s.add_argument("--description")
+    s = sub.add_parser("list-versions"); s.add_argument("--doc", required=True)
+    s = sub.add_parser("create-version"); add_dwe(s, elem=False)
+    s.add_argument("--name", required=True); s.add_argument("--description")
+    s = sub.add_parser("get-workspaces"); s.add_argument("--doc", required=True)
+
+    # Raw feature access (power tools)
+    s = sub.add_parser("add-feature"); add_dwe(s)
+    s.add_argument("--json", help="raw feature JSON (BTFeatureDefinitionCall-1406 envelope)")
+    s.add_argument("--json-file", help="path to a file with the feature JSON")
+    s = sub.add_parser("update-feature"); add_dwe(s); s.add_argument("--feature", required=True)
+    s.add_argument("--json"); s.add_argument("--json-file")
+    s = sub.add_parser("rollback"); add_dwe(s)
+    s.add_argument("--index", type=int, required=True, help="-1 = end of feature list")
+    s = sub.add_parser("draft"); add_dwe(s)
+    s.add_argument("--name", default="Draft"); s.add_argument("--angle", type=float, default=3.0)
+    s.add_argument("--neutral", required=True, help="FeatureScript query for the neutral plane")
+    s.add_argument("--faces", required=True, help="FeatureScript query for faces to draft")
+
+    # Configurations
+    s = sub.add_parser("get-configuration"); add_dwe(s)
+    s = sub.add_parser("encode-configuration"); add_dwe(s)
+    s.add_argument("--params", help='JSON: [{"parameterId":..,"parameterValue":..}]')
+    s.add_argument("--params-file")
+
+    # Assemblies (write)
+    s = sub.add_parser("create-assembly"); add_dwe(s, elem=False); s.add_argument("--name", required=True)
+    s = sub.add_parser("insert-instance"); add_dwe(s)
+    s.add_argument("--src-doc", help="source document id (defaults to --doc)")
+    s.add_argument("--src-elem", required=True, help="source part studio/assembly element id")
+    s.add_argument("--part", help="part id (for a single part)")
+    s.add_argument("--src-version", help="source version id (required for cross-document)")
+    s.add_argument("--is-assembly", action="store_true")
+    s.add_argument("--whole-studio", action="store_true", help="insert the entire Part Studio")
+    s.add_argument("--configuration")
+    s = sub.add_parser("get-assembly-features"); add_dwe(s)
+    s = sub.add_parser("assembly-add-feature"); add_dwe(s)
+    s.add_argument("--json"); s.add_argument("--json-file")
+    s = sub.add_parser("assembly-mate-connector"); add_dwe(s)
+    s.add_argument("--name", default="Mate connector")
+    s.add_argument("--occurrence", required=True, help="instance id from get-assembly")
+    s.add_argument("--inference", default="CENTROID",
+                   help="inferred origin: CENTROID, MID_POINT, etc.")
+    s = sub.add_parser("assembly-mate"); add_dwe(s)
+    s.add_argument("--name", default="Mate")
+    s.add_argument("--type", default="FASTENED",
+                   choices=["FASTENED", "SLIDER", "CYLINDRICAL", "REVOLUTE",
+                            "PIN_SLOT", "PLANAR", "BALL", "PARALLEL"])
+    s.add_argument("--connectors", required=True,
+                   help="comma-separated mate connector feature ids (exactly 2)")
+    s = sub.add_parser("assembly-group"); add_dwe(s)
+    s.add_argument("--name", default="Group")
+    s.add_argument("--occurrences", required=True,
+                   help="comma-separated instance ids to fix together")
+    s = sub.add_parser("get-bom"); add_dwe(s); s.add_argument("--multi-level", action="store_true")
+    s = sub.add_parser("assembly-mass-properties"); add_dwe(s)
+    s = sub.add_parser("delete-instance"); add_dwe(s); s.add_argument("--node", required=True)
+    s = sub.add_parser("transform-instance"); add_dwe(s)
+    s.add_argument("--paths", required=True, help="JSON list of occurrence paths, e.g. [[\"id1\"]]")
+    s.add_argument("--transform", required=True, help="JSON list of 16 floats (row-major 4x4)")
+    s.add_argument("--absolute", action="store_true", help="treat transform as absolute, not relative")
+
+    # Drawings
+    s = sub.add_parser("create-drawing"); add_dwe(s, elem=False)
+    s.add_argument("--name", required=True)
+    s.add_argument("--src-elem", required=True); s.add_argument("--src-version", required=True)
+    s.add_argument("--src-doc"); s.add_argument("--part")
+    s = sub.add_parser("get-drawing-views"); add_dwe(s)
+    s = sub.add_parser("export-drawing"); add_dwe(s)
+    s.add_argument("--out", required=True); s.add_argument("--format", default="PDF")
+
+    # Metadata
+    s = sub.add_parser("get-metadata"); add_dwe(s); s.add_argument("--part")
+    s = sub.add_parser("set-metadata"); add_dwe(s); s.add_argument("--part")
+    s.add_argument("--properties", help='JSON: [{"propertyId":..,"value":..}]')
+    s.add_argument("--properties-file")
+
+    # Feature Studio
+    s = sub.add_parser("create-feature-studio"); add_dwe(s, elem=False); s.add_argument("--name", required=True)
+    s = sub.add_parser("get-feature-studio"); add_dwe(s)
+    s = sub.add_parser("set-feature-studio"); add_dwe(s)
+    s.add_argument("--contents"); s.add_argument("--contents-file")
 
     # Variables
     s = sub.add_parser("get-variables"); add_dwe(s)
@@ -512,13 +772,17 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("find-edges-by-feature"); add_dwe(s); s.add_argument("--feature", required=True)
 
     # Export / analysis
-    s = sub.add_parser("mass-properties"); add_dwe(s)
+    s = sub.add_parser("mass-properties"); add_dwe(s); s.add_argument("--configuration")
     s = sub.add_parser("export-stl"); add_dwe(s)
     s.add_argument("--out", required=True); s.add_argument("--ascii", action="store_true")
     s.add_argument("--resolution", default="medium", choices=["coarse", "medium", "fine"])
+    s.add_argument("--configuration")
     s = sub.add_parser("export"); add_dwe(s)
     s.add_argument("--out", required=True)
     s.add_argument("--format", default="STEP", help="STEP, IGES, 3MF, PARASOLID, ...")
+    s.add_argument("--kind", default="partstudios",
+                   choices=["partstudios", "assemblies", "drawings"])
+    s.add_argument("--configuration")
 
     return p
 

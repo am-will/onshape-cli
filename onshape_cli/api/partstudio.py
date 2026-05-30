@@ -17,7 +17,11 @@ class PartStudioManager:
         self._plane_id_cache: Dict[str, str] = {}
 
     async def get_features(
-        self, document_id: str, workspace_id: str, element_id: str
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+        configuration: str = None,
     ) -> Dict[str, Any]:
         """Get all features from a Part Studio.
 
@@ -25,12 +29,55 @@ class PartStudioManager:
             document_id: Document ID
             workspace_id: Workspace ID
             element_id: Part Studio element ID
+            configuration: optional encoded configuration string to evaluate at
 
         Returns:
             Features data
         """
         path = f"/api/v9/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}/features"
+        params = {"configuration": configuration} if configuration else None
+        return await self.client.get(path, params=params)
+
+    async def get_feature_specs(
+        self, document_id: str, workspace_id: str, element_id: str
+    ) -> Dict[str, Any]:
+        """Get the feature specs (parameter schemas) available in a Part Studio.
+
+        This is the authoritative way to discover the exact parameter ids, enum
+        names, and value options a feature accepts -- including custom features
+        imported into the Part Studio.
+        """
+        path = (
+            f"/api/v9/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
+            "/featurespecs"
+        )
         return await self.client.get(path)
+
+    async def get_sketch_info(
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+        *,
+        sketch_id: str = None,
+        include_geometry: bool = True,
+    ) -> Dict[str, Any]:
+        """Get sketch entities/geometry for a Part Studio (``GET .../sketches``)."""
+        path = f"/api/v9/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}/sketches"
+        params: Dict[str, Any] = {"includeGeometry": str(include_geometry).lower()}
+        if sketch_id:
+            params["sketchId"] = sketch_id
+        return await self.client.get(path, params=params)
+
+    async def set_rollback(
+        self, document_id: str, workspace_id: str, element_id: str, index: int
+    ) -> Dict[str, Any]:
+        """Move the feature-list rollback bar (``-1`` = end of list)."""
+        path = (
+            f"/api/v9/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
+            "/features/rollback"
+        )
+        return await self.client.post(path, data=index)
 
     async def add_feature(
         self, document_id: str, workspace_id: str, element_id: str, feature_data: Dict[str, Any]

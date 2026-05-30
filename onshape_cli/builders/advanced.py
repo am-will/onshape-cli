@@ -491,6 +491,132 @@ def build_circular_pattern(
     )
 
 
+def build_assembly_mate(
+    name: str = "Mate",
+    *,
+    mate_type: str = "FASTENED",
+    mate_connector_ids: List[str],
+) -> Dict[str, Any]:
+    """Build a mate between two existing mate connectors (by their feature ids).
+
+    ``mate_type`` is one of FASTENED, SLIDER, CYLINDRICAL, REVOLUTE, PIN_SLOT,
+    PLANAR, BALL, PARALLEL. ``mate_connector_ids`` are the feature ids of two mate
+    connectors already present in the assembly (from get-assembly-features). This is
+    posted to the assembly ``/features`` endpoint, not the part-studio one.
+    """
+    queries = [
+        {
+            "btType": "BTMFeatureQueryWithOccurrence-157",
+            "path": [],
+            "featureId": fid,
+            "queryData": "",
+        }
+        for fid in mate_connector_ids
+    ]
+    # The assembly addFeature endpoint uses the SAME BTFeatureDefinitionCall-1406
+    # wrapper as part studios (verified live; BTAssemblyFeatureDefinitionParams is
+    # rejected). Mate params (verified via featurespecs): mateType + mateConnectorsQuery.
+    return {
+        "btType": "BTFeatureDefinitionCall-1406",
+        "feature": {
+            "btType": "BTMMate-64",
+            "featureType": "mate",
+            "name": name,
+            "suppressed": False,
+            "parameters": [
+                p_enum("mateType", "Mate type", mate_type),
+                {
+                    "btType": "BTMParameterQueryWithOccurrenceList-67",
+                    "queries": queries,
+                    "parameterId": "mateConnectorsQuery",
+                },
+            ],
+        },
+    }
+
+
+def build_assembly_mate_connector(
+    name: str = "Mate connector",
+    *,
+    occurrence_id: str,
+    inference_type: str = "CENTROID",
+) -> Dict[str, Any]:
+    """Build a mate connector at an inferred origin on an instance.
+
+    Verified live: ``BTMMateConnector-66`` / featureType ``mateConnector`` with an
+    ``originType`` enum (enumName "Origin type", value ON_ENTITY) and an ``originQuery`` whose
+    single ``BTMInferenceQueryWithOccurrence-1083`` infers a point (e.g. CENTROID)
+    on the given occurrence. The returned feature id is what ``build_assembly_mate``
+    references.
+    """
+    return {
+        "btType": "BTFeatureDefinitionCall-1406",
+        "feature": {
+            "btType": "BTMMateConnector-66",
+            "featureType": "mateConnector",
+            "name": name,
+            "suppressed": False,
+            "parameters": [
+                {
+                    "btType": "BTMParameterEnum-145",
+                    "enumName": "Origin type",
+                    "value": "ON_ENTITY",
+                    "parameterId": "originType",
+                    "namespace": "",
+                },
+                {
+                    "btType": "BTMParameterQueryWithOccurrenceList-67",
+                    "parameterId": "originQuery",
+                    "queries": [
+                        {
+                            "btType": "BTMInferenceQueryWithOccurrence-1083",
+                            "inferenceType": inference_type,
+                            "path": [occurrence_id],
+                            "deterministicIds": [],
+                        }
+                    ],
+                },
+            ],
+        },
+    }
+
+
+def build_assembly_group(
+    name: str = "Group",
+    *,
+    occurrence_ids: List[str],
+) -> Dict[str, Any]:
+    """Build a 'group' assembly feature fixing a set of instances together.
+
+    Verified live: featureType ``mateGroup`` / ``BTMMateGroup-65`` with parameter
+    ``occurrencesQuery`` whose queries are ``BTMIndividualOccurrenceQuery-626``
+    entries, each ``path`` being a single instance id from get-assembly.
+    """
+    queries = [
+        {
+            "btType": "BTMIndividualOccurrenceQuery-626",
+            "path": [oid],
+        }
+        for oid in occurrence_ids
+    ]
+    return {
+        "btType": "BTFeatureDefinitionCall-1406",
+        "feature": {
+            "btType": "BTMMateGroup-65",
+            "featureType": "mateGroup",
+            "name": name,
+            "suppressed": False,
+            "parameters": [
+                {
+                    "btType": "BTMParameterQueryWithOccurrenceList-67",
+                    "queries": queries,
+                    "parameterId": "occurrencesQuery",
+                }
+            ],
+        },
+    }
+
+
 def build_offset_plane(
     name: str = "Plane",
     *,
