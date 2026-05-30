@@ -53,7 +53,7 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 
 ---
 
-## 3. Commands (71)
+## 3. Commands (74)
 
 ### Documents, discovery & versioning
 - `list-documents [--limit N] [--filter all|owned|created|shared]`

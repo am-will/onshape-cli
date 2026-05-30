@@ -72,7 +72,7 @@ patterns all accept:
 | `--query "<FeatureScript>"` | any custom query |
 | `--edges id1,id2` | explicit deterministic IDs |
 
-## Commands (71)
+## Commands (74)
 
 Documents & versioning: `create-document`, `delete-document`, `update-document`,
 `list-documents`, `search-documents`, `get-document`, `get-document-summary`,
@@ -95,6 +95,7 @@ Drawings: `create-drawing`, `get-drawing-views`, `export-drawing`.
 Feature Studios: `create-feature-studio`, `get-feature-studio`,
 `set-feature-studio`.
 Metadata: `get-metadata`, `set-metadata`.
+Images: `thumbnail-info`, `get-thumbnail`, `shaded-view`.
 Geometry/export: `get-edges`, `find-circular-edges`, `find-edges-by-feature`,
 `mass-properties`, `export-stl`, `export`.
 Management: `create-part-studio`, `delete-feature`, `delete-element`,
@@ -115,7 +116,8 @@ export-stl, export STEP, all discovery, variables, create/delete part studio,
 delete/add/update feature, get-feature-specs, get-sketch-info, rollback,
 document versioning (update/versions), configurations (get/encode), assemblies
 (create, insert, mate connectors, mates, groups, BOM, mass-properties, transform,
-delete instance), drawings (create/views), feature studios, and metadata get/set.
+delete instance), drawings (create/views), feature studios, metadata get/set,
+and images (thumbnail download + shaded PNG renders of part studios & assemblies).
 
 **Notes:** patterns need a real edge for `--direction-ids`/`--axis-ids` (from
 `get-edges`). `revolve` and `offset-plane` are experimental — their payloads are
