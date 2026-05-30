@@ -109,6 +109,14 @@ with FeatureScript queries.
 `circular-pattern --entities '<query>' --axis-ids EDGEID --count 6`,
 `offset-plane --base-ids JCC --offset 1.0`.
 
+### Images (PNG output)
+`thumbnail-info --elem E` (lists rendered sizes + hrefs),
+`get-thumbnail --elem E --out preview.png [--size 600x340|300x300|70x40]`
+(downloads the rendered thumbnail; Onshape renders them async, so a brand-new
+element may briefly have none — retry shortly),
+`shaded-view --elem E --out render.png [--kind partstudios|assemblies] [--width 600] [--height 340] [--view-matrix "<12 floats>"] [--no-edges] [--configuration C]`
+(server-rendered isometric shaded image — great for an agent to *see* what it built).
+
 ### Geometry / export
 `get-edges`, `find-circular-edges [--radius R]`, `find-edges-by-feature --feature FID`,
 `mass-properties`, `export-stl --out part.stl [--resolution coarse|medium|fine]`,
