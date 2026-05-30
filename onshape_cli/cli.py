@@ -479,6 +479,20 @@ async def run(args) -> None:
                                                      element_kind=args.kind,
                                                      configuration=args.configuration)
             emit({"written": path, "format": args.format})
+        elif cmd == "thumbnail-info":
+            doc, ws, elem = dwe(args)
+            emit(await exporter.thumbnail_info(doc, ws, elem))
+        elif cmd == "get-thumbnail":
+            doc, ws, elem = dwe(args)
+            path = await exporter.get_thumbnail(doc, ws, elem, args.out, size=args.size)
+            emit({"written": path, "size": args.size})
+        elif cmd == "shaded-view":
+            doc, ws, elem = dwe(args)
+            path = await exporter.shaded_view(
+                doc, ws, elem, args.out, element_kind=args.kind,
+                width=args.width, height=args.height, view_matrix=args.view_matrix,
+                show_edges=not args.no_edges, configuration=args.configuration)
+            emit({"written": path})
         else:
             emit_error(f"Unknown command: {cmd}")
             sys.exit(2)
@@ -782,6 +796,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--format", default="STEP", help="STEP, IGES, 3MF, PARASOLID, ...")
     s.add_argument("--kind", default="partstudios",
                    choices=["partstudios", "assemblies", "drawings"])
+    s.add_argument("--configuration")
+
+    # Images (thumbnails + shaded renders)
+    s = sub.add_parser("thumbnail-info"); add_dwe(s)
+    s = sub.add_parser("get-thumbnail"); add_dwe(s)
+    s.add_argument("--out", required=True)
+    s.add_argument("--size", default="600x340",
+                   help="thumbnail size, e.g. 600x340, 300x300, 70x40")
+    s = sub.add_parser("shaded-view"); add_dwe(s)
+    s.add_argument("--out", required=True)
+    s.add_argument("--kind", default="partstudios",
+                   choices=["partstudios", "assemblies"])
+    s.add_argument("--width", type=int, default=600)
+    s.add_argument("--height", type=int, default=340)
+    s.add_argument("--view-matrix",
+                   help="12-value 3x4 row-major camera matrix (default: isometric)")
+    s.add_argument("--no-edges", action="store_true", help="hide model edges in the render")
     s.add_argument("--configuration")
 
     return p
