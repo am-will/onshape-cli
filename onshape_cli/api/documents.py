@@ -209,6 +209,66 @@ class DocumentManager:
         """Delete a document by ID."""
         return await self.client.delete(f"/api/v6/documents/{document_id}")
 
+    async def update_document(
+        self, document_id: str, name: Optional[str] = None, description: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Rename a document and/or change its description (``POST /documents/{did}``)."""
+        data: Dict[str, Any] = {}
+        if name is not None:
+            data["name"] = name
+        if description is not None:
+            data["description"] = description
+        return await self.client.post(f"/api/v6/documents/{document_id}", data=data)
+
+    async def get_versions(self, document_id: str) -> List[Dict[str, Any]]:
+        """List all versions of a document (``GET /documents/d/{did}/versions``)."""
+        return await self.client.get(f"/api/v6/documents/d/{document_id}/versions")
+
+    async def create_version(
+        self,
+        document_id: str,
+        workspace_id: str,
+        name: str,
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a named version (immutable snapshot) from a workspace.
+
+        Versions are required to reference geometry across documents (e.g. inserting
+        a part into an assembly from a version, or creating a drawing).
+        """
+        data: Dict[str, Any] = {
+            "documentId": document_id,
+            "workspaceId": workspace_id,
+            "name": name,
+        }
+        if description:
+            data["description"] = description
+        return await self.client.post(f"/api/v6/documents/d/{document_id}/versions", data=data)
+
+    async def get_assembly(
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+        *,
+        include_mate_features: bool = True,
+        include_mate_connectors: bool = True,
+        include_non_solids: bool = False,
+    ) -> Dict[str, Any]:
+        """Get the full definition of an assembly element.
+
+        Returns ``rootAssembly`` with ``instances`` (each occurrence's id, partId,
+        source document/element, configuration) and ``occurrences`` (absolute
+        transforms), plus mate features / mate connectors when requested.
+        """
+        params = {
+            "includeMateFeatures": str(include_mate_features).lower(),
+            "includeMateConnectors": str(include_mate_connectors).lower(),
+            "includeNonSolids": str(include_non_solids).lower(),
+        }
+        path = f"/api/v6/assemblies/d/{document_id}/w/{workspace_id}/e/{element_id}"
+        return await self.client.get(path, params=params)
+
     async def get_workspaces(self, document_id: str) -> List[WorkspaceInfo]:
         """Get all workspaces in a document.
 

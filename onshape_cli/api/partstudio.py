@@ -77,7 +77,9 @@ class PartStudioManager:
             f"/api/v9/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
             "/features/rollback"
         )
-        return await self.client.post(path, data=index)
+        # Verified live: body is a plain {"rollbackIndex": N} with NO btType
+        # (adding btType is rejected with "Invalid class type"). -1 = end of list.
+        return await self.client.post(path, data={"rollbackIndex": index})
 
     async def add_feature(
         self, document_id: str, workspace_id: str, element_id: str, feature_data: Dict[str, Any]

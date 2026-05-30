@@ -13,14 +13,19 @@ class ExportManager:
         self.client = client
 
     async def mass_properties(
-        self, document_id: str, workspace_id: str, element_id: str
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+        configuration: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get mass properties (volume, mass, centroid) for a Part Studio."""
         path = (
             f"/api/v6/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
             "/massproperties"
         )
-        return await self.client.get(path)
+        params = {"configuration": configuration} if configuration else None
+        return await self.client.get(path, params=params)
 
     async def export_stl(
         self,
@@ -33,6 +38,7 @@ class ExportManager:
         units: str = "inch",
         resolution: str = "medium",
         scale: float = 1.0,
+        configuration: Optional[str] = None,
     ) -> str:
         """Export a Part Studio to an STL file on disk (synchronous endpoint).
 
@@ -48,6 +54,8 @@ class ExportManager:
             "scale": scale,
             "resolution": resolution,
         }
+        if configuration:
+            params["configuration"] = configuration
         url = f"{self.client.base_url}{path}"
         headers = {
             "Authorization": self.client._get_auth_header(),
@@ -80,16 +88,19 @@ class ExportManager:
         output_path: str,
         *,
         format_name: str = "STEP",
+        element_kind: str = "partstudios",
+        configuration: Optional[str] = None,
         poll_interval: float = 1.5,
         timeout: float = 120.0,
     ) -> str:
         """Export via the asynchronous translation API (STEP, IGES, 3MF, PARASOLID...).
 
         Creates a translation job, polls until DONE, then downloads the result.
+        ``element_kind`` is ``partstudios``, ``assemblies``, or ``drawings``.
         """
         # 1) Kick off the translation
         create_path = (
-            f"/api/v6/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
+            f"/api/v6/{element_kind}/d/{document_id}/w/{workspace_id}/e/{element_id}"
             "/translations"
         )
         body = {
@@ -97,6 +108,8 @@ class ExportManager:
             "storeInDocument": False,
             "flattenAssemblies": False,
         }
+        if configuration:
+            body["configuration"] = configuration
         job = await self.client.post(create_path, data=body)
         translation_id = job.get("id")
         if not translation_id:
