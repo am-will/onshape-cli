@@ -72,45 +72,71 @@ patterns all accept:
 | `--query "<FeatureScript>"` | any custom query |
 | `--edges id1,id2` | explicit deterministic IDs |
 
-## Commands (40)
+## Commands (71)
 
-Documents: `create-document`, `delete-document`, `list-documents`,
-`search-documents`, `get-document`,
-`get-document-summary`, `get-elements`, `find-part-studios`, `get-parts`,
-`get-features`, `get-body-details`, `get-assembly`, `get-variables`,
+Documents & versioning: `create-document`, `delete-document`, `update-document`,
+`list-documents`, `search-documents`, `get-document`, `get-document-summary`,
+`get-elements`, `find-part-studios`, `get-parts`, `get-features`,
+`get-feature-specs`, `get-sketch-info`, `get-body-details`, `get-assembly`,
+`get-workspaces`, `list-versions`, `create-version`, `get-variables`,
 `set-variable`.
 Sketching: `sketch-rectangle`, `sketch-circle`, `sketch-line`, `create-sketch`.
-Solids: `extrude`, `hole`, `thicken`, `revolve`.
+Solids: `extrude`, `hole`, `thicken`, `revolve`, `draft`.
 Edges/faces: `fillet`, `chamfer`, `shell`.
 Multi-body/patterns: `boolean`, `mirror`, `linear-pattern`, `circular-pattern`,
 `offset-plane`.
+Raw feature access: `add-feature`, `update-feature`, `rollback`.
+Assemblies: `create-assembly`, `insert-instance`, `get-assembly-features`,
+`assembly-mate-connector`, `assembly-mate`, `assembly-group`,
+`assembly-add-feature`, `get-bom`, `assembly-mass-properties`,
+`transform-instance`, `delete-instance`.
+Configurations: `get-configuration`, `encode-configuration`.
+Drawings: `create-drawing`, `get-drawing-views`, `export-drawing`.
+Feature Studios: `create-feature-studio`, `get-feature-studio`,
+`set-feature-studio`.
+Metadata: `get-metadata`, `set-metadata`.
 Geometry/export: `get-edges`, `find-circular-edges`, `find-edges-by-feature`,
 `mass-properties`, `export-stl`, `export`.
 Management: `create-part-studio`, `delete-feature`, `delete-element`,
 `eval-featurescript`.
 
+> Free Onshape accounts can only create **public** documents (`create-document --public`;
+> private → HTTP 409). Cross-document inserts and drawings reference geometry by
+> **version**, so run `create-version` first.
+
 Full reference, examples, and gotchas: [skills/onshape-cad/SKILL.md](skills/onshape-cad/SKILL.md).
 
 ## Status
 
-**Verified working:** sketches, extrude/hole/thicken, fillet, chamfer, shell,
-boolean (union), mirror, linear/circular patterns, get-edges,
-find-edges-by-feature, mass-properties, export-stl, export STEP, all discovery,
-variables, create/delete part studio, delete-feature.
+**Verified working (live-tested against a real Onshape account):** sketches,
+extrude/hole/thicken/draft, fillet, chamfer, shell, boolean (union), mirror,
+linear/circular patterns, get-edges, find-edges-by-feature, mass-properties,
+export-stl, export STEP, all discovery, variables, create/delete part studio,
+delete/add/update feature, get-feature-specs, get-sketch-info, rollback,
+document versioning (update/versions), configurations (get/encode), assemblies
+(create, insert, mate connectors, mates, groups, BOM, mass-properties, transform,
+delete instance), drawings (create/views), feature studios, and metadata get/set.
 
 **Notes:** patterns need a real edge for `--direction-ids`/`--axis-ids` (from
 `get-edges`). `revolve` and `offset-plane` are experimental — their payloads are
 spec-shaped but may still be rejected on regen; check the returned
-`featureStatus`. `create-document`/`delete-document` work, but **free Onshape
-accounts can only create *public* documents** — pass `--public` (a private
-document returns **HTTP 409**); paid accounts can create private docs too.
+`featureStatus`. **Free Onshape accounts can only create *public* documents** —
+pass `--public` (a private document returns **HTTP 409**); paid accounts can
+create private docs too. Cross-document inserts and drawings reference geometry by
+**version** — run `create-version` first.
 
 ## Development
 
 ```bash
-python scripts/final_test.py   <doc> <ws>   # live end-to-end feature checks
-python scripts/introspect2.py  <doc> <ws> <elem>   # dump Onshape feature specs
+python scripts/final_test.py        <doc> <ws>          # live end-to-end feature checks
+python scripts/introspect2.py       <doc> <ws> <elem>   # dump Onshape feature specs
+python scripts/test_new_areas.py    # versioning, feature-specs, configs, drawings, metadata
+python scripts/test_round2.py       # rollback, metadata write, transform/delete instance
+python scripts/test_assembly_mates.py   # insert, mate connectors, mates, groups
 ```
+
+The `test_*` scripts create a temporary **public** document, exercise the
+commands live, and delete it.
 
 Layout: `onshape_cli/cli.py` (dispatcher), `onshape_cli/builders/` (feature JSON
 builders), `onshape_cli/api/` (REST client + managers).
