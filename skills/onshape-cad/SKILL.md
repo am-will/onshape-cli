@@ -1,6 +1,6 @@
 ---
 name: onshape-cad
-description: Drive Onshape CAD from the command line via the onshape-cli tool — create documents and part studios; build sketches, extrudes, holes, revolves; apply fillets, chamfers, shells; do booleans, mirrors, and linear/circular patterns; query edges; read mass properties; and export STL/STEP/3MF. Use whenever the user wants to build, modify, inspect, or export parametric CAD in Onshape, mentions Onshape or a cad.onshape.com URL, asks for fillets/chamfers/extrudes on a part, or wants to generate a model for 3D printing.
+description: Drive Onshape CAD from the command line via the onshape-cli tool — inspect documents and part studios; build sketches, extrudes, holes, revolves; apply fillets, chamfers, shells; do booleans, mirrors, and linear/circular patterns; query edges; read mass properties; and export STL/STEP/3MF. Use whenever the user wants to build, modify, inspect, or export parametric CAD in Onshape, mentions Onshape or a cad.onshape.com URL, asks for fillets/chamfers/extrudes on a part, or wants to generate a model for 3D printing.
 ---
 
 # Onshape CAD CLI
@@ -31,6 +31,8 @@ the `onshape` block in `~/.claude/mcp.json` (if present).
 Most commands take `--doc <documentId> --ws <workspaceId> --elem <elementId>`.
 `ONSHAPE_DOC`/`ONSHAPE_WS`/`ONSHAPE_ELEM` set defaults, but env does NOT persist
 across separate Bash calls — re-export each call or pass flags explicitly.
+Get IDs from `list-documents` → `find-part-studios`, or a cad.onshape.com URL
+(`.../documents/{doc}/w/{workspace}/e/{element}`).
 
 ### Output
 JSON on stdout: `{"ok": true, "result": ...}` or
@@ -54,9 +56,6 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 ## 3. Commands (40)
 
 ### Documents & discovery
-- `create-document --name "X" [--public] [--description ...]` — **new document**;
-  returns `result.id` and `result.defaultWorkspace.id`
-- `delete-document --doc D`
 - `list-documents [--limit N] [--filter all|owned|created|shared]`
 - `search-documents <query>`, `get-document --doc D`,
   `get-document-summary --doc D`
@@ -64,6 +63,10 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
   `find-part-studios --doc D --ws W [--name PAT]`
 - `get-parts`, `get-features`, `get-body-details`, `get-assembly`
 - `get-variables`, `set-variable --name x --expression "1 in"`
+- `create-document --name "X" [--public]`, `delete-document --doc D`
+  — ⚠️ **require an API key with document-management permission; Onshape returns
+  HTTP 403 otherwise.** If you get 403, do NOT keep retrying: create the document
+  in the Onshape UI (or use an existing one) and pass its `--doc`/`--ws`.
 
 ### Part studio management
 `create-part-studio --name "X"` (returns `result.response.id`),
@@ -99,12 +102,14 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 
 ---
 
-## 4. Worked example — new document → part → STL
+## 4. Worked example — existing document → part → STL
 
 ```bash
-onshape-cli create-document --name "Action Figure"   # note result.id + result.defaultWorkspace.id
+# Pick an existing document/workspace (programmatic create-document needs a
+# doc-management key; if create-document returns 403, work in an existing doc).
+onshape-cli list-documents --limit 10        # choose a doc + workspace
 DOC=...; WS=...
-ELEM=$(onshape-cli get-elements --doc $DOC --ws $WS --type PARTSTUDIO | jq -r '.result[0].id')
+ELEM=$(onshape-cli create-part-studio --doc $DOC --ws $WS --name "Part" | jq -r .result.response.id)
 
 SK=$(onshape-cli sketch-rectangle --doc $DOC --ws $WS --elem $ELEM --plane Top --corner1 0,0 --corner2 3,2 | jq -r .result.featureId)
 EX=$(onshape-cli extrude --doc $DOC --ws $WS --elem $ELEM --sketch $SK --depth 0.25 | jq -r .result.featureId)
@@ -112,19 +117,18 @@ onshape-cli fillet --doc $DOC --ws $WS --elem $ELEM --feature $EX --radius 0.1
 onshape-cli export-stl --doc $DOC --ws $WS --elem $ELEM --out part.stl
 ```
 
-A new document already has a default **"Part Studio 1"** — get its id with
-`get-elements --type PARTSTUDIO` (no need to `create-part-studio` unless you want
-extra studios).
-
 ---
 
 ## 5. Status
 
-**Verified working:** create/delete document, create/delete part studio, sketch,
-extrude, hole, thicken, fillet (`--all`/`--feature`/`--circular`), chamfer, shell
-(with a face query), boolean (union), mirror, linear-pattern, circular-pattern,
-get-edges, find-edges-by-feature, mass-properties, export-stl, export STEP, all
-discovery, variables, delete-feature.
+**Verified working:** create/delete part studio, sketch, extrude, hole, thicken,
+fillet (`--all`/`--feature`/`--circular`), chamfer, shell (with a face query),
+boolean (union), mirror, linear-pattern, circular-pattern, get-edges,
+find-edges-by-feature, mass-properties, export-stl, export STEP, all discovery,
+variables, delete-feature, delete-element.
+
+**Needs key scope:** `create-document` / `delete-document` work only with an API
+key that has document-management permission (else HTTP 403).
 
 **Patterns need a real edge** for `--direction-ids`/`--axis-ids` (from
 `get-edges`); a construction-line query won't resolve.
