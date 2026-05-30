@@ -190,6 +190,25 @@ class DocumentManager:
 
         return documents
 
+    async def create_document(
+        self, name: str, is_public: bool = False, description: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create a new Onshape document (comes with a default workspace + part studio).
+
+        Returns the raw API response, which includes the new document ``id`` and
+        ``defaultWorkspace.id`` you need for subsequent commands. Note: free
+        Onshape accounts can only create *public* documents (pass is_public=True);
+        a private document returns HTTP 409.
+        """
+        data: Dict[str, Any] = {"name": name, "isPublic": is_public}
+        if description:
+            data["description"] = description
+        return await self.client.post("/api/v6/documents", data=data)
+
+    async def delete_document(self, document_id: str) -> Dict[str, Any]:
+        """Delete a document by ID."""
+        return await self.client.delete(f"/api/v6/documents/{document_id}")
+
     async def get_workspaces(self, document_id: str) -> List[WorkspaceInfo]:
         """Get all workspaces in a document.
 
