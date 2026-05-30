@@ -53,25 +53,39 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 
 ---
 
-## 3. Commands (40)
+## 3. Commands (71)
 
-### Documents & discovery
+### Documents, discovery & versioning
 - `list-documents [--limit N] [--filter all|owned|created|shared]`
 - `search-documents <query>`, `get-document --doc D`,
   `get-document-summary --doc D`
 - `get-elements --doc D --ws W [--type PARTSTUDIO]`,
   `find-part-studios --doc D --ws W [--name PAT]`
-- `get-parts`, `get-features`, `get-body-details`, `get-assembly`
+- `get-parts`, `get-features [--configuration C]`, `get-body-details`, `get-assembly`
+- `get-feature-specs` — authoritative parameter schemas for every feature (use before raw `add-feature`)
+- `get-sketch-info [--sketch SID]`
 - `get-variables`, `set-variable --name x --expression "1 in"`
 - `create-document --name "X" --public`, `delete-document --doc D`
   — new/delete a document. ⚠️ **Free Onshape accounts can only create PUBLIC
   documents — always pass `--public`; a private document returns HTTP 409.**
   `create-document` returns `result.id` and `result.defaultWorkspace.id`.
+- `update-document --doc D [--name N] [--description X]`
+- `get-workspaces --doc D`, `list-versions --doc D`
+- `create-version --doc D --ws W --name v1` — make a version before cross-document inserts & drawings
 
 ### Part studio management
 `create-part-studio --name "X"` (returns `result.response.id`),
 `delete-feature --feature FID`, `delete-element`,
 `eval-featurescript --script '<FS>'`.
+
+### Raw feature access (power tools)
+When a built-in command doesn't cover a feature, discover its params with
+`get-feature-specs`, then POST the feature JSON directly. The envelope is a
+`BTFeatureDefinitionCall-1406` wrapping a `BTMFeature-134`; geometry is selected
+with FeatureScript queries.
+- `add-feature (--json '<envelope>' | --json-file FILE)`
+- `update-feature --feature FID (--json ... | --json-file FILE)`
+- `rollback --index N` (`-1` = end of feature list)
 
 ### Sketching (inches)
 `sketch-rectangle --plane Top --corner1 0,0 --corner2 2,1`,
