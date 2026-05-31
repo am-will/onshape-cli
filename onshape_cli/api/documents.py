@@ -7,13 +7,17 @@ from .client import OnshapeClient
 
 
 class DocumentInfo(BaseModel):
-    """Represents an Onshape document."""
+    """Represents an Onshape document (lenient: only ``id`` is required).
+
+    The /documents list & search endpoints null/omit fields per-document; one
+    missing field must not drop the whole document from results.
+    """
 
     id: str
-    name: str
-    created_at: datetime = Field(alias="createdAt")
-    modified_at: datetime = Field(alias="modifiedAt")
-    owner_id: str = Field(alias="ownerId")
+    name: Optional[str] = None
+    created_at: Optional[datetime] = Field(default=None, alias="createdAt")
+    modified_at: Optional[datetime] = Field(default=None, alias="modifiedAt")
+    owner_id: str = Field(default="", alias="ownerId")
     owner_name: Optional[str] = Field(default=None, alias="ownerName")
     public: bool = False
     description: Optional[str] = None
@@ -21,6 +25,7 @@ class DocumentInfo(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = "ignore"
 
 
 class WorkspaceInfo(BaseModel):
@@ -101,8 +106,8 @@ class DocumentManager:
                     name=doc_data.get("name"),
                     createdAt=doc_data.get("createdAt"),
                     modifiedAt=doc_data.get("modifiedAt"),
-                    ownerId=doc_data.get("owner", {}).get("id", ""),
-                    ownerName=doc_data.get("owner", {}).get("name"),
+                    ownerId=(doc_data.get("owner") or {}).get("id", ""),
+                    ownerName=(doc_data.get("owner") or {}).get("name"),
                     public=doc_data.get("public", False),
                     description=doc_data.get("description"),
                     thumbnail=thumbnail_url,
@@ -159,13 +164,17 @@ class DocumentManager:
         Returns:
             List of matching documents
         """
-        params = {"q": query, "limit": limit, "documentFilter": document_filter}
+        # Use /api/v6/documents?q=; the old v5 globaltreenodes/search returns 0
+        # for normal name queries.
+        params: Dict[str, Any] = {"q": query, "limit": limit}
+        if document_filter:
+            params["filter"] = document_filter
 
-        response = await self.client.get("/api/v5/globaltreenodes/search", params=params)
+        response = await self.client.get("/api/v6/documents", params=params)
 
         documents = []
         for item in response.get("items", []):
-            if item.get("resourceType") == "document":
+            if True:
                 try:
                     # Handle thumbnail - can be dict with 'href' or None
                     thumbnail_data = item.get("thumbnail")
@@ -178,8 +187,8 @@ class DocumentManager:
                         name=item.get("name"),
                         createdAt=item.get("createdAt"),
                         modifiedAt=item.get("modifiedAt"),
-                        ownerId=item.get("owner", {}).get("id", ""),
-                        ownerName=item.get("owner", {}).get("name"),
+                        ownerId=(item.get("owner") or {}).get("id", ""),
+                        ownerName=(item.get("owner") or {}).get("name"),
                         public=item.get("public", False),
                         description=item.get("description"),
                         thumbnail=thumbnail_url,

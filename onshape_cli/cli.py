@@ -215,7 +215,16 @@ async def run(args) -> None:
             script = args.script
             if args.script_file:
                 script = Path(args.script_file).read_text()
-            emit(await ps.evaluate_feature_script(doc, ws, elem, script))
+            resp = await ps.evaluate_feature_script(doc, ws, elem, script)
+            if getattr(args, "raw", False):
+                emit(resp)
+            else:
+                from .api.fsvalue import decode_fs_value
+                emit({"value": decode_fs_value(resp.get("result", {})),
+                      "console": (resp.get("console") or "")})
+        elif cmd == "measure":
+            doc, ws, elem = dwe(args)
+            emit(await ps.measure(doc, ws, elem))
 
         # ---- Sketches ----
         elif cmd == "create-sketch":
@@ -683,6 +692,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("delete-element"); add_dwe(s)
     s = sub.add_parser("eval-featurescript"); add_dwe(s)
     s.add_argument("--script", default=""); s.add_argument("--script-file")
+    s.add_argument("--raw", action="store_true",
+                   help="return raw BTFSValue tree instead of decoded JSON")
+    s = sub.add_parser("measure"); add_dwe(s)
 
     # Sketch (full)
     s = sub.add_parser("create-sketch"); add_dwe(s)

@@ -256,3 +256,39 @@ class PartStudioManager:
         )
         data = {"script": script}
         return await self.client.post(path, data=data)
+
+    async def measure(
+        self, document_id: str, workspace_id: str, element_id: str
+    ) -> Dict[str, Any]:
+        """Measure solid bodies: bbox (inches), volume, body count. Clean JSON."""
+        from .fsvalue import decode_fs_value
+
+        script = (
+            "function(context is Context, queries){"
+            " var bs = evaluateQuery(context, qAllModifiableSolidBodies());"
+            " if (size(bs) == 0) { return { bodies: 0 }; }"
+            " var b = evBox3d(context, { topology: qAllModifiableSolidBodies(), tight: true });"
+            " var vol = 0; for (var x in bs) { vol += evVolume(context, { entities: x }); }"
+            " return { bodies: size(bs),"
+            "   minx: b.minCorner[0]/inch, miny: b.minCorner[1]/inch, minz: b.minCorner[2]/inch,"
+            "   maxx: b.maxCorner[0]/inch, maxy: b.maxCorner[1]/inch, maxz: b.maxCorner[2]/inch,"
+            "   vol_in3: vol/(inch*inch*inch) }; }"
+        )
+        resp = await self.evaluate_feature_script(document_id, workspace_id, element_id, script)
+        d = decode_fs_value(resp.get("result", {})) or {}
+        n = int(d.get("bodies", 0) or 0)
+        if n == 0:
+            return {"bodies": 0,
+                    "bbox": {"x": 0.0, "y": 0.0, "z": 0.0, "min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0]},
+                    "volume_in3": 0.0}
+        return {
+            "bodies": n,
+            "bbox": {
+                "x": round(d["maxx"] - d["minx"], 4),
+                "y": round(d["maxy"] - d["miny"], 4),
+                "z": round(d["maxz"] - d["minz"], 4),
+                "min": [round(d["minx"], 4), round(d["miny"], 4), round(d["minz"], 4)],
+                "max": [round(d["maxx"], 4), round(d["maxy"], 4), round(d["maxz"], 4)],
+            },
+            "volume_in3": round(d.get("vol_in3", 0.0), 4),
+        }
