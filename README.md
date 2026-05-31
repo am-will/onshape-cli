@@ -72,7 +72,7 @@ patterns all accept:
 | `--query "<FeatureScript>"` | any custom query |
 | `--edges id1,id2` | explicit deterministic IDs |
 
-## Commands (74)
+## Commands (75)
 
 Documents & versioning: `create-document`, `delete-document`, `update-document`,
 `list-documents`, `search-documents`, `get-document`, `get-document-summary`,

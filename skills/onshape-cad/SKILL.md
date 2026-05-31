@@ -53,7 +53,7 @@ Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
 
 ---
 
-## 3. Commands (74)
+## 3. Commands (75)
 
 ### Documents, discovery & versioning
 - `list-documents [--limit N] [--filter all|owned|created|shared]`
@@ -117,10 +117,15 @@ element may briefly have none — retry shortly),
 `shaded-view --elem E --out render.png [--kind partstudios|assemblies] [--width 600] [--height 340] [--view-matrix "<12 floats>"] [--no-edges] [--configuration C]`
 (server-rendered isometric shaded image — great for an agent to *see* what it built).
 
-### Geometry / export
+### Geometry / measure / export
+`measure --doc D --ws W --elem E` — **fastest dimension check**; returns clean
+`{bodies, bbox:{x,y,z,min,max}, volume_in3}` in inches (no FeatureScript needed).
+Use it to verify a build instead of hand-writing `evBox3d`.
 `get-edges`, `find-circular-edges [--radius R]`, `find-edges-by-feature --feature FID`,
 `mass-properties`, `export-stl --out part.stl [--resolution coarse|medium|fine]`,
 `export --out part.step --format STEP` (also IGES/3MF/PARASOLID).
+`eval-featurescript --script "<FS>"` returns **decoded** JSON in `result.value`
+by default (`--raw` for the raw BTFSValue tree).
 
 ---
 
@@ -168,8 +173,22 @@ returned `featureStatus` or use the Onshape UI.
 - Don't chamfer/shell **all** edges of an already-filleted body.
 - `shell` needs ≥1 face to remove.
 - `export-stl` is fast/synchronous (best for printing); `export` uses the async
-  translation API for STEP/3MF/IGES/PARASOLID.
+  translation API for STEP/3MF/IGES/PARASOLID. STEP and STL are reliable; 3MF
+  async export has failed ("Invalid 3MF detail parameters") — prefer STL/STEP.
 - Lengths are inches, angles degrees.
+
+### Working cleanly (lessons from a messy run)
+- **Build a part as ONE closed-`line`-loop profile sketch + ONE `extrude --op NEW`**
+  rather than chaining `--op ADD`/`REMOVE`. `create-sketch` `rectangle` is only for
+  axis-aligned boxes; an arbitrary side profile = all `line` segments forming a loop.
+- **When scripting a multi-step build, drive the API in ONE process** and capture
+  `result.id`/`defaultWorkspace.id` once; threading IDs through many separate shell
+  calls is fragile.
+- **Search before creating** (`search-documents`/`list-documents`) so re-runs don't
+  spawn `Name (1)`, `Name (1) (1)` duplicates.
+- **Verify with `measure`** after each shaping step (check `bodies` + `bbox`).
+- To **edit** an existing model, target its `--doc/--ws/--elem` directly — never
+  recreate it; that's how you avoid overwriting or duplicating the original.
 
 ## 7. Source & extending
 `onshape_cli/cli.py` (dispatcher), `onshape_cli/builders/advanced.py` (feature
