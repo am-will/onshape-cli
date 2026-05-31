@@ -268,7 +268,7 @@ class PartStudioManager:
             " var bs = evaluateQuery(context, qAllModifiableSolidBodies());"
             " if (size(bs) == 0) { return { bodies: 0 }; }"
             " var b = evBox3d(context, { topology: qAllModifiableSolidBodies(), tight: true });"
-            " var vol = 0; for (var x in bs) { vol += evVolume(context, { entities: x }); }"
+            " var vol = evVolume(context, { entities: qAllModifiableSolidBodies() });"
             " return { bodies: size(bs),"
             "   minx: b.minCorner[0]/inch, miny: b.minCorner[1]/inch, minz: b.minCorner[2]/inch,"
             "   maxx: b.maxCorner[0]/inch, maxy: b.maxCorner[1]/inch, maxz: b.maxCorner[2]/inch,"
