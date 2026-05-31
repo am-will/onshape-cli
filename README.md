@@ -96,7 +96,7 @@ Feature Studios: `create-feature-studio`, `get-feature-studio`,
 `set-feature-studio`.
 Metadata: `get-metadata`, `set-metadata`.
 Images: `thumbnail-info`, `get-thumbnail`, `shaded-view`.
-Geometry/export: `get-edges`, `find-circular-edges`, `find-edges-by-feature`,
+Geometry/measure/export: `measure`, `get-edges`, `find-circular-edges`, `find-edges-by-feature`,
 `mass-properties`, `export-stl`, `export`.
 Management: `create-part-studio`, `delete-feature`, `delete-element`,
 `eval-featurescript`.
