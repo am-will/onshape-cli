@@ -6,6 +6,14 @@ import { HttpError, OnshapeClient } from "./api/client";
 import { DocumentManager } from "./api/documents";
 import { EdgeQuery } from "./api/edges";
 import { loadJson, PartStudioManager } from "./api/partstudio";
+import {
+  buildBooleanUnion,
+  buildCircleAxisSketch,
+  buildCircleSketch,
+  buildExtrude,
+  buildRevolve,
+  parsePoint2,
+} from "./builders/modeling";
 import { CliError, emit, emitError } from "./output";
 
 type Options = Record<string, string | boolean>;
@@ -79,6 +87,12 @@ async function run(argv: string[]): Promise<void> {
     case "add-feature":
     case "update-feature":
     case "rollback":
+    case "sketch-circle":
+    case "sketch-circle-axis":
+    case "extrude":
+    case "revolve":
+    case "boolean-union":
+    case "validate-partstudio":
     case "get-edges":
     case "find-circular-edges":
     case "find-edges-by-feature":
@@ -103,7 +117,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       const key = rawKey.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
       if (eq !== -1) {
         options[key] = item.slice(eq + 1);
-      } else if (argv[index + 1] && !argv[index + 1].startsWith("-")) {
+      } else if (argv[index + 1] && (!argv[index + 1].startsWith("-") || isNegativeValue(argv[index + 1]))) {
         options[key] = argv[index + 1];
         index += 1;
       } else {
@@ -119,6 +133,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return { command, positionals, options };
+}
+
+function isNegativeValue(value: string): boolean {
+  return /^-\d/.test(value) || /^-\.\d/.test(value);
 }
 
 async function handleConfig(parsed: ParsedArgs): Promise<void> {
@@ -317,7 +335,7 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
     case "add-feature": {
       const { doc, ws, elem } = dwe(parsed.options);
       const feature = requiredJson(parsed.options);
-      emit(await withFeatureId(partstudios.addFeature(doc, ws, elem, feature)));
+      emit(await addFeatureResult(partstudios, doc, ws, elem, feature, !parsed.options.noValidate));
       return;
     }
     case "update-feature": {
@@ -329,6 +347,104 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
     case "rollback": {
       const { doc, ws, elem } = dwe(parsed.options);
       emit(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
+      return;
+    }
+    case "sketch-circle": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildCircleSketch({
+            name: stringOption(parsed.options, "name") ?? "Sketch circle",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            center: parsePointOption(parsed.options, "center"),
+            radius: requiredNumberOption(parsed.options, "radius"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "sketch-circle-axis": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildCircleAxisSketch({
+            name: stringOption(parsed.options, "name") ?? "Sketch circle and axis",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            center: parsePointOption(parsed.options, "center"),
+            radius: requiredNumberOption(parsed.options, "radius"),
+            axisStart: parsePointOption(parsed.options, "axisStart"),
+            axisEnd: parsePointOption(parsed.options, "axisEnd"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "extrude": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildExtrude({
+            name: stringOption(parsed.options, "name") ?? "Extrude",
+            sketchFeatureId: requiredOption(parsed.options, "sketch"),
+            depth: requiredNumberOption(parsed.options, "depth"),
+            operationType: stringOption(parsed.options, "op") ?? "NEW",
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "revolve": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildRevolve({
+            name: stringOption(parsed.options, "name") ?? "Revolve",
+            sketchFeatureId: requiredOption(parsed.options, "sketch"),
+            angle: numberOption(parsed.options, "angle", 360),
+            operationType: stringOption(parsed.options, "op") ?? "NEW",
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "boolean-union": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await addFeatureResult(partstudios, doc, ws, elem, buildBooleanUnion(), !parsed.options.noValidate));
+      return;
+    }
+    case "validate-partstudio": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      try {
+        emit(
+          await partstudios.validatePartStudio(doc, ws, elem, {
+            parts: optionalNumberOption(parsed.options, "expectParts"),
+            bodies: optionalNumberOption(parsed.options, "expectBodies"),
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new CliError(message, null, 1);
+      }
       return;
     }
     case "get-edges": {
@@ -358,10 +474,26 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   }
 }
 
-async function withFeatureId(responsePromise: Promise<unknown>): Promise<unknown> {
-  const response = await responsePromise;
+async function addFeatureResult(
+  partstudios: PartStudioManager,
+  doc: string,
+  ws: string,
+  elem: string,
+  feature: unknown,
+  validate: boolean,
+): Promise<unknown> {
+  const response = await partstudios.addFeature(doc, ws, elem, feature);
   const featureId = isRecord(response) && isRecord(response.feature) ? response.feature.featureId ?? null : null;
-  return { featureId, response };
+  const result: Record<string, unknown> = { featureId, response };
+  if (validate && typeof featureId === "string") {
+    try {
+      result.validation = await partstudios.validateFeature(doc, ws, elem, featureId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new CliError(message, { featureId, response }, 1);
+    }
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -421,6 +553,15 @@ function requiredOption(options: Options, key: string): string {
   return stringOption(options, key) ?? missing(key);
 }
 
+function parsePointOption(options: Options, key: string): [number, number] {
+  try {
+    return parsePoint2(requiredOption(options, key));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CliError(message, null, 2);
+  }
+}
+
 function requiredJson(options: Options): unknown {
   try {
     return loadJson(stringOption(options, "json"), stringOption(options, "jsonFile"));
@@ -473,6 +614,12 @@ Commands:
   add-feature
   update-feature
   rollback
+  sketch-circle
+  sketch-circle-axis
+  extrude
+  revolve
+  boolean-union
+  validate-partstudio
   get-edges
   find-circular-edges
   find-edges-by-feature

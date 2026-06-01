@@ -41,6 +41,7 @@ const client_1 = require("./api/client");
 const documents_1 = require("./api/documents");
 const edges_1 = require("./api/edges");
 const partstudio_1 = require("./api/partstudio");
+const modeling_1 = require("./builders/modeling");
 const output_1 = require("./output");
 async function main(argv) {
     try {
@@ -104,6 +105,12 @@ async function run(argv) {
         case "add-feature":
         case "update-feature":
         case "rollback":
+        case "sketch-circle":
+        case "sketch-circle-axis":
+        case "extrude":
+        case "revolve":
+        case "boolean-union":
+        case "validate-partstudio":
         case "get-edges":
         case "find-circular-edges":
         case "find-edges-by-feature":
@@ -127,7 +134,7 @@ function parseArgs(argv) {
             if (eq !== -1) {
                 options[key] = item.slice(eq + 1);
             }
-            else if (argv[index + 1] && !argv[index + 1].startsWith("-")) {
+            else if (argv[index + 1] && (!argv[index + 1].startsWith("-") || isNegativeValue(argv[index + 1]))) {
                 options[key] = argv[index + 1];
                 index += 1;
             }
@@ -146,6 +153,9 @@ function parseArgs(argv) {
         }
     }
     return { command, positionals, options };
+}
+function isNegativeValue(value) {
+    return /^-\d/.test(value) || /^-\.\d/.test(value);
 }
 async function handleConfig(parsed) {
     const action = parsed.positionals[0];
@@ -324,7 +334,7 @@ async function handleReadCommand(parsed) {
         case "add-feature": {
             const { doc, ws, elem } = dwe(parsed.options);
             const feature = requiredJson(parsed.options);
-            (0, output_1.emit)(await withFeatureId(partstudios.addFeature(doc, ws, elem, feature)));
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, feature, !parsed.options.noValidate));
             return;
         }
         case "update-feature": {
@@ -336,6 +346,67 @@ async function handleReadCommand(parsed) {
         case "rollback": {
             const { doc, ws, elem } = dwe(parsed.options);
             (0, output_1.emit)(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
+            return;
+        }
+        case "sketch-circle": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, (0, modeling_1.buildCircleSketch)({
+                name: stringOption(parsed.options, "name") ?? "Sketch circle",
+                plane: stringOption(parsed.options, "plane") ?? "Front",
+                center: parsePointOption(parsed.options, "center"),
+                radius: requiredNumberOption(parsed.options, "radius"),
+            }), !parsed.options.noValidate));
+            return;
+        }
+        case "sketch-circle-axis": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, (0, modeling_1.buildCircleAxisSketch)({
+                name: stringOption(parsed.options, "name") ?? "Sketch circle and axis",
+                plane: stringOption(parsed.options, "plane") ?? "Front",
+                center: parsePointOption(parsed.options, "center"),
+                radius: requiredNumberOption(parsed.options, "radius"),
+                axisStart: parsePointOption(parsed.options, "axisStart"),
+                axisEnd: parsePointOption(parsed.options, "axisEnd"),
+            }), !parsed.options.noValidate));
+            return;
+        }
+        case "extrude": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, (0, modeling_1.buildExtrude)({
+                name: stringOption(parsed.options, "name") ?? "Extrude",
+                sketchFeatureId: requiredOption(parsed.options, "sketch"),
+                depth: requiredNumberOption(parsed.options, "depth"),
+                operationType: stringOption(parsed.options, "op") ?? "NEW",
+            }), !parsed.options.noValidate));
+            return;
+        }
+        case "revolve": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, (0, modeling_1.buildRevolve)({
+                name: stringOption(parsed.options, "name") ?? "Revolve",
+                sketchFeatureId: requiredOption(parsed.options, "sketch"),
+                angle: numberOption(parsed.options, "angle", 360),
+                operationType: stringOption(parsed.options, "op") ?? "NEW",
+            }), !parsed.options.noValidate));
+            return;
+        }
+        case "boolean-union": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await addFeatureResult(partstudios, doc, ws, elem, (0, modeling_1.buildBooleanUnion)(), !parsed.options.noValidate));
+            return;
+        }
+        case "validate-partstudio": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            try {
+                (0, output_1.emit)(await partstudios.validatePartStudio(doc, ws, elem, {
+                    parts: optionalNumberOption(parsed.options, "expectParts"),
+                    bodies: optionalNumberOption(parsed.options, "expectBodies"),
+                }));
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                throw new output_1.CliError(message, null, 1);
+            }
             return;
         }
         case "get-edges": {
@@ -362,10 +433,20 @@ async function handleReadCommand(parsed) {
         }
     }
 }
-async function withFeatureId(responsePromise) {
-    const response = await responsePromise;
+async function addFeatureResult(partstudios, doc, ws, elem, feature, validate) {
+    const response = await partstudios.addFeature(doc, ws, elem, feature);
     const featureId = isRecord(response) && isRecord(response.feature) ? response.feature.featureId ?? null : null;
-    return { featureId, response };
+    const result = { featureId, response };
+    if (validate && typeof featureId === "string") {
+        try {
+            result.validation = await partstudios.validateFeature(doc, ws, elem, featureId);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new output_1.CliError(message, { featureId, response }, 1);
+        }
+    }
+    return result;
 }
 function isRecord(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -419,6 +500,15 @@ function requiredNumberOption(options, key) {
 function requiredOption(options, key) {
     return stringOption(options, key) ?? missing(key);
 }
+function parsePointOption(options, key) {
+    try {
+        return (0, modeling_1.parsePoint2)(requiredOption(options, key));
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new output_1.CliError(message, null, 2);
+    }
+}
 function requiredJson(options) {
     try {
         return (0, partstudio_1.loadJson)(stringOption(options, "json"), stringOption(options, "jsonFile"));
@@ -470,6 +560,12 @@ Commands:
   add-feature
   update-feature
   rollback
+  sketch-circle
+  sketch-circle-axis
+  extrude
+  revolve
+  boolean-union
+  validate-partstudio
   get-edges
   find-circular-edges
   find-edges-by-feature
