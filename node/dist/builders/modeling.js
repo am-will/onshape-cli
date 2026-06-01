@@ -4,8 +4,11 @@ exports.planeId = planeId;
 exports.parsePoint2 = parsePoint2;
 exports.buildCircleSketch = buildCircleSketch;
 exports.buildCircleAxisSketch = buildCircleAxisSketch;
+exports.buildCandyCanePathSketch = buildCandyCanePathSketch;
 exports.buildExtrude = buildExtrude;
 exports.buildRevolve = buildRevolve;
+exports.buildOffsetPlane = buildOffsetPlane;
+exports.buildSweep = buildSweep;
 exports.buildBooleanUnion = buildBooleanUnion;
 const INCH_TO_METER = 0.0254;
 const PLANE_IDS = {
@@ -73,20 +76,47 @@ function lineEntity(id, start, end, isConstruction = false) {
         isConstruction,
     };
 }
-function sketch(name, sketchPlaneId, entities) {
+function arcEntity(id, center, radius, startAngle, endAngle) {
+    if (radius <= 0)
+        throw new Error("Arc radius must be positive.");
+    return {
+        btType: "BTMSketchCurveSegment-155",
+        entityId: id,
+        startPointId: `${id}.start`,
+        endPointId: `${id}.end`,
+        centerId: `${id}.center`,
+        startParam: (startAngle * Math.PI) / 180,
+        endParam: (endAngle * Math.PI) / 180,
+        geometry: {
+            btType: "BTCurveGeometryCircle-115",
+            radius: toMeters(radius),
+            xCenter: toMeters(center[0]),
+            yCenter: toMeters(center[1]),
+            xDir: 1,
+            yDir: 0,
+            clockwise: false,
+        },
+        isConstruction: false,
+    };
+}
+function sketchPlaneParameter(sketchPlaneId, featureId) {
+    if (featureId) {
+        return pQuery("sketchPlane", `query = qCreatedBy(makeId("${featureId}"), EntityType.FACE);`, featureId);
+    }
+    return {
+        btType: "BTMParameterQueryList-148",
+        queries: [{ btType: "BTMIndividualQuery-138", deterministicIds: [sketchPlaneId] }],
+        parameterId: "sketchPlane",
+    };
+}
+function sketch(name, sketchPlaneId, entities, featureId) {
     return {
         feature: {
             btType: "BTMSketch-151",
             featureType: "newSketch",
             name,
             suppressed: false,
-            parameters: [
-                {
-                    btType: "BTMParameterQueryList-148",
-                    queries: [{ btType: "BTMIndividualQuery-138", deterministicIds: [sketchPlaneId] }],
-                    parameterId: "sketchPlane",
-                },
-            ],
+            parameters: [sketchPlaneParameter(sketchPlaneId, featureId)],
             entities,
             constraints: [],
         },
@@ -141,6 +171,20 @@ function pQuery(parameterId, queryString, featureId) {
         libraryRelationType: "NONE",
     };
 }
+function pDeterministicQuery(parameterId, deterministicIds) {
+    return {
+        btType: "BTMParameterQueryList-148",
+        queries: [
+            {
+                btType: "BTMIndividualQuery-138",
+                deterministicIds,
+            },
+        ],
+        parameterId,
+        parameterName: "",
+        libraryRelationType: "NONE",
+    };
+}
 function sketchRegion(parameterId, sketchFeatureId) {
     return {
         btType: "BTMParameterQueryList-148",
@@ -159,14 +203,38 @@ function sketchRegion(parameterId, sketchFeatureId) {
         libraryRelationType: "NONE",
     };
 }
+function sketchEdges(parameterId, sketchFeatureId) {
+    return pQuery(parameterId, `query = qCreatedBy(makeId("${sketchFeatureId}"), EntityType.EDGE);`, sketchFeatureId);
+}
 function buildCircleSketch(input) {
-    return sketch(input.name, planeId(input.plane), [circleEntity("circle.1", input.center, input.radius)]);
+    return sketch(input.name, planeId(input.plane), [circleEntity("circle.1", input.center, input.radius)], input.planeFeatureId);
 }
 function buildCircleAxisSketch(input) {
     return sketch(input.name, planeId(input.plane), [
         circleEntity("profile.circle", input.center, input.radius),
         lineEntity("axis.1", input.axisStart, input.axisEnd, true),
     ]);
+}
+function buildCandyCanePathSketch(input) {
+    const top = input.bottom + input.straightHeight;
+    const center = [input.x - input.hookRadius, top];
+    const totalSegments = Math.max(2, Math.floor(input.segments));
+    const arcLength = input.hookRadius * Math.abs((input.hookAngle * Math.PI) / 180);
+    const straightShare = input.straightHeight / (input.straightHeight + arcLength);
+    const straightSegments = Math.max(1, Math.round(totalSegments * straightShare));
+    const arcSegments = Math.max(1, totalSegments - straightSegments);
+    const entities = [];
+    for (let index = 0; index < straightSegments; index += 1) {
+        const y1 = input.bottom + (input.straightHeight * index) / straightSegments;
+        const y2 = input.bottom + (input.straightHeight * (index + 1)) / straightSegments;
+        entities.push(lineEntity(`path.stem.${index + 1}`, [input.x, y1], [input.x, y2]));
+    }
+    for (let index = 0; index < arcSegments; index += 1) {
+        const start = (input.hookAngle * index) / arcSegments;
+        const end = (input.hookAngle * (index + 1)) / arcSegments;
+        entities.push(arcEntity(`path.hook.${index + 1}`, center, input.hookRadius, start, end));
+    }
+    return sketch(input.name, planeId(input.plane), entities);
 }
 function buildExtrude(input) {
     return {
@@ -204,6 +272,47 @@ function buildRevolve(input) {
                 pBool("fullRevolve", false),
                 pEnum("endBound", "RevolveBoundingType", "BLIND"),
                 pQuantity("angle", input.angle, "deg"),
+                pBool("defaultScope", true),
+            ],
+        },
+    };
+}
+function buildOffsetPlane(input) {
+    return {
+        btType: "BTFeatureDefinitionCall-1406",
+        feature: {
+            btType: "BTMFeature-134",
+            featureType: "cPlane",
+            name: input.name,
+            suppressed: false,
+            namespace: "",
+            parameters: [
+                pEnum("cplaneType", "CPlaneType", "OFFSET"),
+                pDeterministicQuery("entities", [planeId(input.basePlane)]),
+                pQuantity("offset", input.offset, "in"),
+                pBool("oppositeDirection", false),
+            ],
+        },
+    };
+}
+function buildSweep(input) {
+    return {
+        btType: "BTFeatureDefinitionCall-1406",
+        feature: {
+            btType: "BTMFeature-134",
+            featureType: "sweep",
+            name: input.name,
+            suppressed: false,
+            namespace: "",
+            parameters: [
+                pEnum("bodyType", "ExtendedToolBodyType", "SOLID"),
+                pEnum("operationType", "NewBodyOperationType", input.operationType),
+                sketchRegion("profiles", input.profileSketchFeatureId),
+                sketchEdges("path", input.pathSketchFeatureId),
+                pEnum("profileControl", "ProfileControlMode", "NONE"),
+                pBool("hasTwist", false),
+                pBool("hasScale", false),
+                pBool("trimEnds", true),
                 pBool("defaultScope", true),
             ],
         },

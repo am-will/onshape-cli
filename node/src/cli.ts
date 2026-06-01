@@ -5,13 +5,17 @@ import { CredentialError, CredentialStore, DEFAULT_BASE_URL, type Credentials, t
 import { HttpError, OnshapeClient } from "./api/client";
 import { DocumentManager } from "./api/documents";
 import { EdgeQuery } from "./api/edges";
+import { FeatureStudioManager, loadText } from "./api/featurestudio";
 import { loadJson, PartStudioManager } from "./api/partstudio";
 import {
   buildBooleanUnion,
+  buildCandyCanePathSketch,
   buildCircleAxisSketch,
   buildCircleSketch,
   buildExtrude,
+  buildOffsetPlane,
   buildRevolve,
+  buildSweep,
   parsePoint2,
 } from "./builders/modeling";
 import { CliError, emit, emitError } from "./output";
@@ -84,13 +88,20 @@ async function run(argv: string[]): Promise<void> {
     case "create-part-studio":
     case "delete-feature":
     case "delete-element":
+    case "create-feature-studio":
+    case "get-feature-studio":
+    case "set-feature-studio":
+    case "get-feature-studio-specs":
     case "add-feature":
     case "update-feature":
     case "rollback":
     case "sketch-circle":
     case "sketch-circle-axis":
+    case "sketch-candy-cane-path":
     case "extrude":
     case "revolve":
+    case "sweep":
+    case "offset-plane":
     case "boolean-union":
     case "validate-partstudio":
     case "get-edges":
@@ -225,6 +236,7 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   const client = new OnshapeClient(creds);
   const docs = new DocumentManager(client);
   const partstudios = new PartStudioManager(client);
+  const featurestudios = new FeatureStudioManager(client);
   const edges = new EdgeQuery(client);
 
   switch (parsed.command) {
@@ -332,6 +344,38 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
       emit(await client.delete(`/api/v9/elements/d/${doc}/w/${ws}/e/${elem}`));
       return;
     }
+    case "create-feature-studio": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await featurestudios.create(doc, ws, requiredOption(parsed.options, "name")));
+      return;
+    }
+    case "get-feature-studio": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await featurestudios.getContents(doc, ws, elem));
+      return;
+    }
+    case "set-feature-studio": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      try {
+        emit(
+          await featurestudios.setContents(
+            doc,
+            ws,
+            elem,
+            loadText(stringOption(parsed.options, "contents"), stringOption(parsed.options, "contentsFile")),
+          ),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new CliError(message, null, 2);
+      }
+      return;
+    }
+    case "get-feature-studio-specs": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await featurestudios.getSpecs(doc, ws, elem));
+      return;
+    }
     case "add-feature": {
       const { doc, ws, elem } = dwe(parsed.options);
       const feature = requiredJson(parsed.options);
@@ -360,6 +404,7 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
           buildCircleSketch({
             name: stringOption(parsed.options, "name") ?? "Sketch circle",
             plane: stringOption(parsed.options, "plane") ?? "Front",
+            planeFeatureId: stringOption(parsed.options, "planeFeature"),
             center: parsePointOption(parsed.options, "center"),
             radius: requiredNumberOption(parsed.options, "radius"),
           }),
@@ -383,6 +428,29 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
             radius: requiredNumberOption(parsed.options, "radius"),
             axisStart: parsePointOption(parsed.options, "axisStart"),
             axisEnd: parsePointOption(parsed.options, "axisEnd"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "sketch-candy-cane-path": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildCandyCanePathSketch({
+            name: stringOption(parsed.options, "name") ?? "Candy cane centerline",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            x: numberOption(parsed.options, "x", 0),
+            bottom: numberOption(parsed.options, "bottom", 0),
+            straightHeight: requiredNumberOption(parsed.options, "straightHeight"),
+            hookRadius: requiredNumberOption(parsed.options, "hookRadius"),
+            hookAngle: numberOption(parsed.options, "hookAngle", 210),
+            segments: numberOption(parsed.options, "segments", 24),
           }),
           !parsed.options.noValidate,
         ),
@@ -421,6 +489,43 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
             sketchFeatureId: requiredOption(parsed.options, "sketch"),
             angle: numberOption(parsed.options, "angle", 360),
             operationType: stringOption(parsed.options, "op") ?? "NEW",
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "sweep": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildSweep({
+            name: stringOption(parsed.options, "name") ?? "Sweep",
+            profileSketchFeatureId: requiredOption(parsed.options, "profile"),
+            pathSketchFeatureId: requiredOption(parsed.options, "path"),
+            operationType: stringOption(parsed.options, "op") ?? "NEW",
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "offset-plane": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildOffsetPlane({
+            name: stringOption(parsed.options, "name") ?? "Offset plane",
+            basePlane: stringOption(parsed.options, "basePlane") ?? "Top",
+            offset: requiredNumberOption(parsed.options, "offset"),
           }),
           !parsed.options.noValidate,
         ),
@@ -611,13 +716,20 @@ Commands:
   create-part-studio
   delete-feature
   delete-element
+  create-feature-studio
+  get-feature-studio
+  set-feature-studio
+  get-feature-studio-specs
   add-feature
   update-feature
   rollback
   sketch-circle
   sketch-circle-axis
+  sketch-candy-cane-path
   extrude
   revolve
+  sweep
+  offset-plane
   boolean-union
   validate-partstudio
   get-edges
