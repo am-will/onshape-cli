@@ -153,3 +153,6 @@ headless/CI (lazy import, try/catch, file fallback).
 - 2026-06-01: Updated packaging/docs for the Python credential flow. Verified editable
   install metadata, CLI help, shared JSON specs, Python compile, config round-trip,
   logout, explicit-key login, and missing-credential exit 2.
+- 2026-06-01: Started Phase 2 with a Node TypeScript/CommonJS package scaffold,
+  npm bin entry, lockfile, and placeholder CLI. Verified `npm install`,
+  `npm run build`, help output, and unknown-command JSON exit 2.

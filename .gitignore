@@ -28,3 +28,6 @@ credentials.json
 *.stl
 *.step
 *.3mf
+
+# Node
+node/node_modules/
