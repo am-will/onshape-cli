@@ -55,6 +55,42 @@ export class OnshapeClient {
     return responseJsonOrStatus(response, "deleted");
   }
 
+  /**
+   * GET raw bytes (e.g. an STL or a thumbnail PNG). Follows Onshape's regional /
+   * S3 redirects with the Authorization header re-attached on every hop, which
+   * `fetchWithAuthRedirects` already does. `accept` overrides the Accept header.
+   */
+  async getBinary(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined>,
+    accept = "*/*",
+  ): Promise<{ buffer: Buffer; contentType: string; status: number }> {
+    const url = new URL(path, this.creds.baseUrl);
+    if (params) {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined) search.set(key, String(value));
+      }
+      url.search = search.toString();
+    }
+    const response = await this.fetchWithAuthRedirects(url, { Accept: accept });
+    if (!response.ok) {
+      throw new HttpError(response.status, await responseDetail(response));
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { buffer, contentType: response.headers.get("content-type") ?? "", status: response.status };
+  }
+
+  /** GET an absolute URL for raw bytes (already-resolved href, auth re-attached). */
+  async getBinaryUrl(href: string, accept = "*/*"): Promise<{ buffer: Buffer; contentType: string; status: number }> {
+    const response = await this.fetchWithAuthRedirects(new URL(href), { Accept: accept });
+    if (!response.ok) {
+      throw new HttpError(response.status, await responseDetail(response));
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { buffer, contentType: response.headers.get("content-type") ?? "", status: response.status };
+  }
+
   private async requestJson(url: URL): Promise<unknown> {
     for (let attempt = 1; attempt <= MAX_READ_ATTEMPTS; attempt += 1) {
       const response = await this.fetchWithAuthRedirects(url, {
