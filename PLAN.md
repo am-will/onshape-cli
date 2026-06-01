@@ -150,3 +150,6 @@ headless/CI (lazy import, try/catch, file fallback).
   added `login`/`logout`. Verified config file round-trip, non-TTY login guard,
   explicit-key login, auto fallback to file when `keyring` is absent, explicit
   keychain failure as JSON exit 2, and missing-credential JSON exit 2.
+- 2026-06-01: Updated packaging/docs for the Python credential flow. Verified editable
+  install metadata, CLI help, shared JSON specs, Python compile, config round-trip,
+  logout, explicit-key login, and missing-credential exit 2.

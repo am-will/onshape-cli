@@ -25,6 +25,9 @@ dependencies = [
     "loguru>=0.7.0",
 ]
 
+[project.optional-dependencies]
+keychain = ["keyring>=24"]
+
 [project.urls]
 Homepage = "https://github.com/am-will/onshape-cli"
 Repository = "https://github.com/am-will/onshape-cli"

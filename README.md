@@ -30,19 +30,38 @@ Requires Python ≥ 3.10. Dependencies: `httpx`, `pydantic`, `loguru`.
 ## Authenticate
 
 Create an API key pair at https://dev.onshape.com → **API keys**, then save it
-once (prompts for the keys; the secret is hidden and the file is written
-`0600` to `~/.onshape/credentials.json`):
+once. `login` imports keys from your environment or `~/.claude/mcp.json` when it
+can; otherwise it opens the API-key page and prompts for the access key and the
+one-time secret:
 
 ```bash
-onshape-cli config set            # prompts for access + secret key, verifies them
-onshape-cli config show           # show what's saved (secret redacted)
-onshape-cli config path           # print the credentials file path
-onshape-cli config clear          # delete the saved credentials
+onshape-cli login                 # import or prompt, verify, and save
+onshape-cli logout                # delete saved credentials
+onshape-cli config show           # show saved credentials (secret redacted)
+onshape-cli config path           # print the credentials pointer/fallback path
+```
+
+By default, credentials are stored in the OS keychain when the optional
+`keychain` extra is installed and available, with a `0600`
+`~/.onshape/credentials.json` file fallback. Install keychain support with:
+
+```bash
+pip install -e '.[keychain]'
+```
+
+For headless or scripted use:
+
+```bash
+onshape-cli login --store file --access-key ... --secret-key ... --no-verify
+onshape-cli config set --store file --access-key ... --secret-key ...
 ```
 
 Credentials are resolved in this order: `--access-key`/`--secret-key` flags →
-`ONSHAPE_ACCESS_KEY`/`ONSHAPE_SECRET_KEY` env vars → `~/.onshape/credentials.json`
-→ the `onshape` block of `~/.claude/mcp.json`. So you can also just:
+`ONSHAPE_ACCESS_KEY`/`ONSHAPE_SECRET_KEY` env vars →
+`~/.onshape/credentials.json` (or `ONSHAPE_CONFIG`) → Linux
+`$XDG_CONFIG_HOME/onshape/credentials.json` → the `onshape` block of
+`~/.claude/mcp.json`. `ONSHAPE_BASE_URL` or `--base-url` can override the API
+base URL. So you can also just:
 
 ```bash
 export ONSHAPE_ACCESS_KEY=...   ONSHAPE_SECRET_KEY=...

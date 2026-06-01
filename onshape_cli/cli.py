@@ -7,11 +7,13 @@ as a subcommand. Output is JSON on stdout so agents can parse it.
 Credentials are read from (in order):
   1. --access-key / --secret-key flags
   2. ONSHAPE_ACCESS_KEY / ONSHAPE_SECRET_KEY env vars
-  3. ~/.onshape/credentials.json  (written by `onshape-cli config set`)
-  4. ~/.claude/mcp.json  (the "onshape" server's env block)
+  3. ~/.onshape/credentials.json or ONSHAPE_CONFIG
+  4. $XDG_CONFIG_HOME/onshape/credentials.json on Linux
+  5. ~/.claude/mcp.json  (the "onshape" server's env block)
 
 Save credentials once with:
-  onshape-cli config set            # prompts for keys (secret hidden)
+  onshape-cli login                 # import or prompt for keys (secret hidden)
+  onshape-cli logout                # delete saved credentials
   onshape-cli config show           # show what's saved (secret redacted)
 
 Document/workspace/element default to ONSHAPE_DOC / ONSHAPE_WS / ONSHAPE_ELEM
