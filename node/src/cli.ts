@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { CredentialError, CredentialStore, DEFAULT_BASE_URL, type Credentials, type StoreMode } from "./credentials";
 import { HttpError, OnshapeClient } from "./api/client";
 import { DocumentManager } from "./api/documents";
+import { EdgeQuery } from "./api/edges";
 import { loadJson, PartStudioManager } from "./api/partstudio";
 import { CliError, emit, emitError } from "./output";
 
@@ -78,6 +79,9 @@ async function run(argv: string[]): Promise<void> {
     case "add-feature":
     case "update-feature":
     case "rollback":
+    case "get-edges":
+    case "find-circular-edges":
+    case "find-edges-by-feature":
     case "mass-properties":
       await handleReadCommand(parsed);
       return;
@@ -203,6 +207,7 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   const client = new OnshapeClient(creds);
   const docs = new DocumentManager(client);
   const partstudios = new PartStudioManager(client);
+  const edges = new EdgeQuery(client);
 
   switch (parsed.command) {
     case "list-documents": {
@@ -326,6 +331,21 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
       emit(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
       return;
     }
+    case "get-edges": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await edges.getEdges(doc, ws, elem));
+      return;
+    }
+    case "find-circular-edges": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await edges.findCircularEdges(doc, ws, elem, optionalNumberOption(parsed.options, "radius")));
+      return;
+    }
+    case "find-edges-by-feature": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await edges.findEdgesByFeature(doc, ws, elem, requiredOption(parsed.options, "feature")));
+      return;
+    }
     case "mass-properties": {
       const { doc, ws, elem } = dwe(parsed.options);
       emit(
@@ -379,6 +399,14 @@ function stringOption(options: Options, key: string): string | undefined {
 function numberOption(options: Options, key: string, fallback: number): number {
   const value = stringOption(options, key);
   return value === undefined ? fallback : Number(value);
+}
+
+function optionalNumberOption(options: Options, key: string): number | undefined {
+  const value = stringOption(options, key);
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new CliError(`--${key} must be a number`, null, 2);
+  return number;
 }
 
 function requiredNumberOption(options: Options, key: string): number {
@@ -445,6 +473,9 @@ Commands:
   add-feature
   update-feature
   rollback
+  get-edges
+  find-circular-edges
+  find-edges-by-feature
   mass-properties
 `);
 }

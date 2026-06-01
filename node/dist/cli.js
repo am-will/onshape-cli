@@ -39,6 +39,7 @@ const node_process_1 = require("node:process");
 const credentials_1 = require("./credentials");
 const client_1 = require("./api/client");
 const documents_1 = require("./api/documents");
+const edges_1 = require("./api/edges");
 const partstudio_1 = require("./api/partstudio");
 const output_1 = require("./output");
 async function main(argv) {
@@ -103,6 +104,9 @@ async function run(argv) {
         case "add-feature":
         case "update-feature":
         case "rollback":
+        case "get-edges":
+        case "find-circular-edges":
+        case "find-edges-by-feature":
         case "mass-properties":
             await handleReadCommand(parsed);
             return;
@@ -225,6 +229,7 @@ async function handleReadCommand(parsed) {
     const client = new client_1.OnshapeClient(creds);
     const docs = new documents_1.DocumentManager(client);
     const partstudios = new partstudio_1.PartStudioManager(client);
+    const edges = new edges_1.EdgeQuery(client);
     switch (parsed.command) {
         case "list-documents": {
             const filterMap = { all: undefined, owned: 1, created: 4, shared: 5 };
@@ -333,6 +338,21 @@ async function handleReadCommand(parsed) {
             (0, output_1.emit)(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
             return;
         }
+        case "get-edges": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await edges.getEdges(doc, ws, elem));
+            return;
+        }
+        case "find-circular-edges": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await edges.findCircularEdges(doc, ws, elem, optionalNumberOption(parsed.options, "radius")));
+            return;
+        }
+        case "find-edges-by-feature": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await edges.findEdgesByFeature(doc, ws, elem, requiredOption(parsed.options, "feature")));
+            return;
+        }
         case "mass-properties": {
             const { doc, ws, elem } = dwe(parsed.options);
             (0, output_1.emit)(await client.get(`/api/v6/partstudios/d/${doc}/w/${ws}/e/${elem}/massproperties`, {
@@ -377,6 +397,15 @@ function stringOption(options, key) {
 function numberOption(options, key, fallback) {
     const value = stringOption(options, key);
     return value === undefined ? fallback : Number(value);
+}
+function optionalNumberOption(options, key) {
+    const value = stringOption(options, key);
+    if (value === undefined)
+        return undefined;
+    const number = Number(value);
+    if (!Number.isFinite(number))
+        throw new output_1.CliError(`--${key} must be a number`, null, 2);
+    return number;
 }
 function requiredNumberOption(options, key) {
     const value = stringOption(options, key);
@@ -441,6 +470,9 @@ Commands:
   add-feature
   update-feature
   rollback
+  get-edges
+  find-circular-edges
+  find-edges-by-feature
   mass-properties
 `);
 }
