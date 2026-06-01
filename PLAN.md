@@ -156,3 +156,8 @@ headless/CI (lazy import, try/catch, file fallback).
 - 2026-06-01: Started Phase 2 with a Node TypeScript/CommonJS package scaffold,
   npm bin entry, lockfile, and placeholder CLI. Verified `npm install`,
   `npm run build`, help output, and unknown-command JSON exit 2.
+- 2026-06-01: Added Node credential store, HTTP client, `login`/`logout`/`config`,
+  and initial read commands (`list-documents`, `get-document`, `get-features`,
+  `mass-properties`). Verified `npm run build`, `npm run check`, Node write/Python
+  read, Python write/Node read, explicit-key Node login, missing-credential exit 2,
+  and unknown-command exit 2.
