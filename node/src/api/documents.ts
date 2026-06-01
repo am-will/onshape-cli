@@ -89,6 +89,19 @@ export class DocumentManager {
     return elements.filter((element) => String((element as Record<string, unknown>).name ?? "").toLowerCase().includes(pattern));
   }
 
+  async getAssembly(
+    documentId: string,
+    workspaceId: string,
+    elementId: string,
+    opts: { includeMateFeatures?: boolean; includeMateConnectors?: boolean; includeNonSolids?: boolean } = {},
+  ): Promise<unknown> {
+    return this.client.get(`/api/v6/assemblies/d/${documentId}/w/${workspaceId}/e/${elementId}`, {
+      includeMateFeatures: String(opts.includeMateFeatures ?? true),
+      includeMateConnectors: String(opts.includeMateConnectors ?? true),
+      includeNonSolids: String(opts.includeNonSolids ?? false),
+    });
+  }
+
   async getDocumentSummary(documentId: string): Promise<unknown> {
     const document = await this.getDocument(documentId);
     const workspaces = await this.getWorkspaces(documentId);
