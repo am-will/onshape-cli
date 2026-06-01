@@ -39,6 +39,7 @@ const node_process_1 = require("node:process");
 const credentials_1 = require("./credentials");
 const client_1 = require("./api/client");
 const documents_1 = require("./api/documents");
+const partstudio_1 = require("./api/partstudio");
 const output_1 = require("./output");
 async function main(argv) {
     try {
@@ -91,7 +92,17 @@ async function run(argv) {
         case "get-workspaces":
         case "list-versions":
         case "create-version":
+        case "get-parts":
         case "get-features":
+        case "get-feature-specs":
+        case "get-sketch-info":
+        case "get-body-details":
+        case "create-part-studio":
+        case "delete-feature":
+        case "delete-element":
+        case "add-feature":
+        case "update-feature":
+        case "rollback":
         case "mass-properties":
             await handleReadCommand(parsed);
             return;
@@ -213,6 +224,7 @@ async function handleReadCommand(parsed) {
     const creds = resolveCredentials(parsed.options);
     const client = new client_1.OnshapeClient(creds);
     const docs = new documents_1.DocumentManager(client);
+    const partstudios = new partstudio_1.PartStudioManager(client);
     switch (parsed.command) {
         case "list-documents": {
             const filterMap = { all: undefined, owned: 1, created: 4, shared: 5 };
@@ -266,9 +278,59 @@ async function handleReadCommand(parsed) {
         }
         case "get-features": {
             const { doc, ws, elem } = dwe(parsed.options);
-            (0, output_1.emit)(await client.get(`/api/v9/partstudios/d/${doc}/w/${ws}/e/${elem}/features`, {
-                configuration: stringOption(parsed.options, "configuration"),
-            }));
+            (0, output_1.emit)(await partstudios.getFeatures(doc, ws, elem, stringOption(parsed.options, "configuration")));
+            return;
+        }
+        case "get-feature-specs": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.getFeatureSpecs(doc, ws, elem));
+            return;
+        }
+        case "get-sketch-info": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.getSketchInfo(doc, ws, elem, stringOption(parsed.options, "sketch")));
+            return;
+        }
+        case "get-body-details": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.getBodyDetails(doc, ws, elem));
+            return;
+        }
+        case "get-parts": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.getParts(doc, ws, elem));
+            return;
+        }
+        case "create-part-studio": {
+            const { doc, ws } = docWorkspace(parsed.options);
+            (0, output_1.emit)(await partstudios.createPartStudio(doc, ws, requiredOption(parsed.options, "name")));
+            return;
+        }
+        case "delete-feature": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.deleteFeature(doc, ws, elem, requiredOption(parsed.options, "feature")));
+            return;
+        }
+        case "delete-element": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await client.delete(`/api/v9/elements/d/${doc}/w/${ws}/e/${elem}`));
+            return;
+        }
+        case "add-feature": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            const feature = requiredJson(parsed.options);
+            (0, output_1.emit)(await withFeatureId(partstudios.addFeature(doc, ws, elem, feature)));
+            return;
+        }
+        case "update-feature": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            const feature = requiredJson(parsed.options);
+            (0, output_1.emit)(await partstudios.updateFeature(doc, ws, elem, requiredOption(parsed.options, "feature"), feature));
+            return;
+        }
+        case "rollback": {
+            const { doc, ws, elem } = dwe(parsed.options);
+            (0, output_1.emit)(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
             return;
         }
         case "mass-properties": {
@@ -279,6 +341,14 @@ async function handleReadCommand(parsed) {
             return;
         }
     }
+}
+async function withFeatureId(responsePromise) {
+    const response = await responsePromise;
+    const featureId = isRecord(response) && isRecord(response.feature) ? response.feature.featureId ?? null : null;
+    return { featureId, response };
+}
+function isRecord(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function resolveCredentials(options) {
     return new credentials_1.CredentialStore().resolve({
@@ -308,8 +378,26 @@ function numberOption(options, key, fallback) {
     const value = stringOption(options, key);
     return value === undefined ? fallback : Number(value);
 }
+function requiredNumberOption(options, key) {
+    const value = stringOption(options, key);
+    if (value === undefined)
+        missing(key);
+    const number = Number(value);
+    if (!Number.isFinite(number))
+        throw new output_1.CliError(`--${key} must be a number`, null, 2);
+    return number;
+}
 function requiredOption(options, key) {
     return stringOption(options, key) ?? missing(key);
+}
+function requiredJson(options) {
+    try {
+        return (0, partstudio_1.loadJson)(stringOption(options, "json"), stringOption(options, "jsonFile"));
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new output_1.CliError(message, null, 2);
+    }
 }
 function missing(key) {
     throw new output_1.CliError(`Missing required option --${key}`, null, 2);
@@ -342,7 +430,17 @@ Commands:
   get-workspaces
   list-versions
   create-version
+  get-parts
   get-features
+  get-feature-specs
+  get-sketch-info
+  get-body-details
+  create-part-studio
+  delete-feature
+  delete-element
+  add-feature
+  update-feature
+  rollback
   mass-properties
 `);
 }

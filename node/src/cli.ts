@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { CredentialError, CredentialStore, DEFAULT_BASE_URL, type Credentials, type StoreMode } from "./credentials";
 import { HttpError, OnshapeClient } from "./api/client";
 import { DocumentManager } from "./api/documents";
+import { loadJson, PartStudioManager } from "./api/partstudio";
 import { CliError, emit, emitError } from "./output";
 
 type Options = Record<string, string | boolean>;
@@ -66,7 +67,17 @@ async function run(argv: string[]): Promise<void> {
     case "get-workspaces":
     case "list-versions":
     case "create-version":
+    case "get-parts":
     case "get-features":
+    case "get-feature-specs":
+    case "get-sketch-info":
+    case "get-body-details":
+    case "create-part-studio":
+    case "delete-feature":
+    case "delete-element":
+    case "add-feature":
+    case "update-feature":
+    case "rollback":
     case "mass-properties":
       await handleReadCommand(parsed);
       return;
@@ -191,6 +202,7 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   const creds = resolveCredentials(parsed.options);
   const client = new OnshapeClient(creds);
   const docs = new DocumentManager(client);
+  const partstudios = new PartStudioManager(client);
 
   switch (parsed.command) {
     case "list-documents": {
@@ -259,11 +271,59 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
     }
     case "get-features": {
       const { doc, ws, elem } = dwe(parsed.options);
-      emit(
-        await client.get(`/api/v9/partstudios/d/${doc}/w/${ws}/e/${elem}/features`, {
-          configuration: stringOption(parsed.options, "configuration"),
-        }),
-      );
+      emit(await partstudios.getFeatures(doc, ws, elem, stringOption(parsed.options, "configuration")));
+      return;
+    }
+    case "get-feature-specs": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.getFeatureSpecs(doc, ws, elem));
+      return;
+    }
+    case "get-sketch-info": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.getSketchInfo(doc, ws, elem, stringOption(parsed.options, "sketch")));
+      return;
+    }
+    case "get-body-details": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.getBodyDetails(doc, ws, elem));
+      return;
+    }
+    case "get-parts": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.getParts(doc, ws, elem));
+      return;
+    }
+    case "create-part-studio": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await partstudios.createPartStudio(doc, ws, requiredOption(parsed.options, "name")));
+      return;
+    }
+    case "delete-feature": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.deleteFeature(doc, ws, elem, requiredOption(parsed.options, "feature")));
+      return;
+    }
+    case "delete-element": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await client.delete(`/api/v9/elements/d/${doc}/w/${ws}/e/${elem}`));
+      return;
+    }
+    case "add-feature": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const feature = requiredJson(parsed.options);
+      emit(await withFeatureId(partstudios.addFeature(doc, ws, elem, feature)));
+      return;
+    }
+    case "update-feature": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const feature = requiredJson(parsed.options);
+      emit(await partstudios.updateFeature(doc, ws, elem, requiredOption(parsed.options, "feature"), feature));
+      return;
+    }
+    case "rollback": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.rollback(doc, ws, elem, requiredNumberOption(parsed.options, "index")));
       return;
     }
     case "mass-properties": {
@@ -276,6 +336,16 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
       return;
     }
   }
+}
+
+async function withFeatureId(responsePromise: Promise<unknown>): Promise<unknown> {
+  const response = await responsePromise;
+  const featureId = isRecord(response) && isRecord(response.feature) ? response.feature.featureId ?? null : null;
+  return { featureId, response };
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function resolveCredentials(options: Options): Credentials {
@@ -311,8 +381,25 @@ function numberOption(options: Options, key: string, fallback: number): number {
   return value === undefined ? fallback : Number(value);
 }
 
+function requiredNumberOption(options: Options, key: string): number {
+  const value = stringOption(options, key);
+  if (value === undefined) missing(key);
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new CliError(`--${key} must be a number`, null, 2);
+  return number;
+}
+
 function requiredOption(options: Options, key: string): string {
   return stringOption(options, key) ?? missing(key);
+}
+
+function requiredJson(options: Options): unknown {
+  try {
+    return loadJson(stringOption(options, "json"), stringOption(options, "jsonFile"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CliError(message, null, 2);
+  }
 }
 
 function missing(key: string): never {
@@ -347,7 +434,17 @@ Commands:
   get-workspaces
   list-versions
   create-version
+  get-parts
   get-features
+  get-feature-specs
+  get-sketch-info
+  get-body-details
+  create-part-studio
+  delete-feature
+  delete-element
+  add-feature
+  update-feature
+  rollback
   mass-properties
 `);
 }

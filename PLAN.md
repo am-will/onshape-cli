@@ -166,3 +166,8 @@ headless/CI (lazy import, try/catch, file fallback).
   `update-document`, `get-elements`, `find-part-studios`, `get-workspaces`,
   `list-versions`, and `create-version`. Verified `npm run build`, `npm run check`,
   and required-argument JSON exit 2 checks without making live API calls.
+- 2026-06-01: Ported Node Part Studio read/management REST commands that do not
+  require builder payload ports yet: `get-parts`, `get-feature-specs`,
+  `get-sketch-info`, `get-body-details`, `create-part-studio`, `delete-feature`,
+  `delete-element`, `add-feature`, `update-feature`, and `rollback`. Verified
+  `npm run build`, `npm run check`, and local JSON/argument exit 2 checks.
