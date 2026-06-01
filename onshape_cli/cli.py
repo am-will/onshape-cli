@@ -219,9 +219,18 @@ async def run(args) -> None:
             if getattr(args, "raw", False):
                 emit(resp)
             else:
-                from .api.fsvalue import decode_fs_value
-                emit({"value": decode_fs_value(resp.get("result", {})),
-                      "console": (resp.get("console") or "")})
+                from .api.fsvalue import (
+                    decode_fs_value, featurescript_messages, FeatureScriptError,
+                )
+                notices = featurescript_messages(resp)
+                # result is null only when evaluation failed; the reason is in notices.
+                if resp.get("result") is None and notices:
+                    raise FeatureScriptError(notices)
+                out = {"value": decode_fs_value(resp.get("result")),
+                       "console": (resp.get("console") or "")}
+                if notices:  # warnings that didn't stop evaluation
+                    out["warnings"] = notices
+                emit(out)
         elif cmd == "measure":
             doc, ws, elem = dwe(args)
             emit(await ps.measure(doc, ws, elem))
@@ -837,7 +846,10 @@ def main(argv=None) -> None:
         asyncio.run(run(args))
     except Exception as exc:  # noqa: BLE001
         import httpx
-        if isinstance(exc, httpx.HTTPStatusError):
+        from .api.fsvalue import FeatureScriptError
+        if isinstance(exc, FeatureScriptError):
+            emit_error(f"FeatureScript error: {exc}", {"notices": exc.notices})
+        elif isinstance(exc, httpx.HTTPStatusError):
             try:
                 detail = exc.response.json()
             except Exception:

@@ -47,7 +47,26 @@ returns non-dicts unchanged). Have `eval-featurescript` return decoded JSON in
 `result.value` by default, with `--raw` for the raw BTFSValue tree. Reuse it in
 `measure`.
 
-## 5. Things that are NOT bugs (don't "fix" them)
+## 5. FeatureScript errors were silently swallowed → `null`  (BUG, fixed 2026-06-01)
+`/featurescript` returns **HTTP 200** with `result: null` and the real reason in
+`notices` (e.g. a SEMANTIC error). The CLI decoded `result` and emitted
+`{"value": null}` (and `measure` reported `{"bodies": 0}`), hiding the cause.
+Surfaced during the stand build: an inline measure script used `vol` as both a
+local variable and a map key — FeatureScript rejects that
+(*"Cannot use vol as map key … Use (vol) or 'vol' to disambiguate"*) — but all the
+agent saw was `null`, which looked like a regen/timing flake. (Root cause was a
+bug in the *caller's* script, not the tool; the tool's fault was hiding it. The
+built-in `measure` script was always fine — its key is `vol_in3`, no collision.)
+**Fix:** added `api/fsvalue.py:featurescript_messages(resp)` (parses `notices` →
+`[{type, message}]`) and `FeatureScriptError`. `eval-featurescript` now raises it
+when `result is null` with notices (clear `ok:false` + `detail.notices`, exit 1)
+and attaches non-fatal notices as `warnings`; `measure` raises instead of
+reporting 0 bodies. Verified live: a `vol`-as-key script now returns the exact
+error message; valid evals and `measure` unaffected.
+**Lesson:** a `null` result from `eval-featurescript`/`measure` almost always
+means a FeatureScript error — read `detail.notices` for the message.
+
+## 6. Things that are NOT bugs (don't "fix" them)
 - **`list-documents`** works; a transient `0` right after `/login` was auth
   propagation, not a code defect.
 - **`extrude --op ADD/REMOVE`** works (re-tested NEW->ADD->REMOVE clean). An

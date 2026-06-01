@@ -15,7 +15,35 @@ both qualified (``com.belmonttech...BTFSValueMap``) and short (``BTFSValueMap-20
 forms, and tolerates a legacy ``message``-wrapped shape.
 """
 
-from typing import Any
+from typing import Any, Dict, List
+
+
+class FeatureScriptError(Exception):
+    """A ``/featurescript`` evaluation that failed (``result`` is null).
+
+    Onshape returns HTTP 200 with ``result: null`` and the real explanation in
+    ``notices`` (e.g. a SEMANTIC error like an undefined variable or a map-key
+    name collision). ``.notices`` holds the parsed ``[{type, message}, ...]``.
+    """
+
+    def __init__(self, notices: List[Dict[str, Any]]):
+        self.notices = notices
+        msg = notices[0]["message"] if notices else "unknown FeatureScript error"
+        super().__init__(msg)
+
+
+def featurescript_messages(resp: Any) -> List[Dict[str, Any]]:
+    """Extract ``[{type, message}, ...]`` from a ``/featurescript`` response's notices.
+
+    Notices carry the human-readable reason an evaluation failed or warned; the
+    rest of the response throws them away. Returns ``[]`` when there are none.
+    """
+    out: List[Dict[str, Any]] = []
+    if isinstance(resp, dict):
+        for n in resp.get("notices") or []:
+            if isinstance(n, dict) and n.get("message"):
+                out.append({"type": n.get("type"), "message": n["message"]})
+    return out
 
 
 def decode_fs_value(value: Any) -> Any:

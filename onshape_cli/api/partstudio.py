@@ -261,7 +261,7 @@ class PartStudioManager:
         self, document_id: str, workspace_id: str, element_id: str
     ) -> Dict[str, Any]:
         """Measure solid bodies: bbox (inches), volume, body count. Clean JSON."""
-        from .fsvalue import decode_fs_value
+        from .fsvalue import decode_fs_value, featurescript_messages, FeatureScriptError
 
         script = (
             "function(context is Context, queries){"
@@ -275,7 +275,11 @@ class PartStudioManager:
             "   vol_in3: vol/(inch*inch*inch) }; }"
         )
         resp = await self.evaluate_feature_script(document_id, workspace_id, element_id, script)
-        d = decode_fs_value(resp.get("result", {})) or {}
+        # A null result means the eval failed; surface the reason rather than
+        # silently reporting "0 bodies".
+        if resp.get("result") is None:
+            raise FeatureScriptError(featurescript_messages(resp))
+        d = decode_fs_value(resp.get("result")) or {}
         n = int(d.get("bodies", 0) or 0)
         if n == 0:
             return {"bodies": 0,
