@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "units": {
+    "inchToMeter": 0.0254
+  },
+  "planes": {
+    "Front": "JCC",
+    "Top": "JDC",
+    "Right": "JEC"
+  },
+  "views": {
+    "isometricMatrix": "0.707,0.707,0,0,-0.408,0.408,0.816,0,0.577,-0.577,0.577,0"
+  },
+  "btTypes": [
+    "BTCurveGeometryCircle-115",
+    "BTCurveGeometryLine-117",
+    "BTFSValueMapEntry-2077",
+    "BTFeatureDefinitionCall-1406",
+    "BTMFeature-134",
+    "BTMFeatureQueryWithOccurrence-157",
+    "BTMIndividualOccurrenceQuery-626",
+    "BTMIndividualQuery-138",
+    "BTMIndividualSketchRegionQuery-140",
+    "BTMInferenceQueryWithOccurrence-1083",
+    "BTMMate-64",
+    "BTMMateConnector-66",
+    "BTMMateGroup-65",
+    "BTMParameterBoolean-144",
+    "BTMParameterEnum-145",
+    "BTMParameterQuantity-147",
+    "BTMParameterQueryList-148",
+    "BTMParameterQueryWithOccurrenceList-67",
+    "BTMParameterString-149",
+    "BTMSketch-151",
+    "BTMSketchConstraint-2",
+    "BTMSketchCurve-4",
+    "BTMSketchCurveSegment-155",
+    "com.belmonttech.serialize.fsvalue.BTFSValueArray",
+    "com.belmonttech.serialize.fsvalue.BTFSValueBoolean",
+    "com.belmonttech.serialize.fsvalue.BTFSValueMap",
+    "com.belmonttech.serialize.fsvalue.BTFSValueNumber",
+    "com.belmonttech.serialize.fsvalue.BTFSValueString",
+    "com.belmonttech.serialize.fsvalue.BTFSValueUndefined",
+    "com.belmonttech.serialize.fsvalue.BTFSValueWithUnits"
+  ]
+}

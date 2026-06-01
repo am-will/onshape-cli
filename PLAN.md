@@ -140,3 +140,5 @@ headless/CI (lazy import, try/catch, file fallback).
 - 2026-06-01: Reviewed the plan against the current repo. Improvement needed: break
   Phase 1 into independently committable slices and add acceptance criteria before
   implementation.
+- 2026-06-01: Added shared credential and constants specs for Phase 1. Verified both
+  files parse as JSON.
