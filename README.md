@@ -27,6 +27,19 @@ pip install -e .
 
 Requires Python ≥ 3.10. Dependencies: `httpx`, `pydantic`, `loguru`.
 
+### Node / npm
+
+A Node/TypeScript build ships as the npm package **`onshape`** with **full command
+parity** — the same command names, flags, and JSON contract as the Python CLI (see
+[`node/README.md`](node/README.md)):
+
+```bash
+npm install -g onshape   # or: npx onshape <command>
+onshape login
+```
+
+Requires Node ≥ 18.
+
 ## Authenticate
 
 Create an API key pair at https://dev.onshape.com → **API keys**, then save it
