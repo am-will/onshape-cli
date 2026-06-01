@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 
 import type { OnshapeClient } from "./client";
+import { decodeFsValue, featurescriptMessages, FeatureScriptError } from "./fsvalue";
+
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
 export interface FeatureValidation {
   featureId: string;
@@ -52,6 +55,44 @@ export class PartStudioManager {
 
   async addFeature(documentId: string, workspaceId: string, elementId: string, feature: unknown): Promise<unknown> {
     return this.client.post(`/api/v9/partstudios/d/${documentId}/w/${workspaceId}/e/${elementId}/features`, feature);
+  }
+
+  async evaluateFeatureScript(documentId: string, workspaceId: string, elementId: string, script: string): Promise<unknown> {
+    return this.client.post(`/api/v6/partstudios/d/${documentId}/w/${workspaceId}/e/${elementId}/featurescript`, { script });
+  }
+
+  /** Measure solid bodies: bounding box (inches), volume, body count. */
+  async measure(documentId: string, workspaceId: string, elementId: string): Promise<Record<string, unknown>> {
+    const script =
+      "function(context is Context, queries){" +
+      " var bs = evaluateQuery(context, qAllModifiableSolidBodies());" +
+      " if (size(bs) == 0) { return { bodies: 0 }; }" +
+      " var b = evBox3d(context, { topology: qAllModifiableSolidBodies(), tight: true });" +
+      " var vol = evVolume(context, { entities: qAllModifiableSolidBodies() });" +
+      " return { bodies: size(bs)," +
+      "   minx: b.minCorner[0]/inch, miny: b.minCorner[1]/inch, minz: b.minCorner[2]/inch," +
+      "   maxx: b.maxCorner[0]/inch, maxy: b.maxCorner[1]/inch, maxz: b.maxCorner[2]/inch," +
+      "   vol_in3: vol/(inch*inch*inch) }; }";
+    const resp = (await this.evaluateFeatureScript(documentId, workspaceId, elementId, script)) as Record<string, any>;
+    if (!isRecord(resp) || resp.result === null || resp.result === undefined) {
+      throw new FeatureScriptError(featurescriptMessages(resp));
+    }
+    const d = (decodeFsValue(resp.result) as Record<string, any>) || {};
+    const n = Number(d.bodies ?? 0) || 0;
+    if (n === 0) {
+      return { bodies: 0, bbox: { x: 0, y: 0, z: 0, min: [0, 0, 0], max: [0, 0, 0] }, volume_in3: 0 };
+    }
+    return {
+      bodies: n,
+      bbox: {
+        x: round4(d.maxx - d.minx),
+        y: round4(d.maxy - d.miny),
+        z: round4(d.maxz - d.minz),
+        min: [round4(d.minx), round4(d.miny), round4(d.minz)],
+        max: [round4(d.maxx), round4(d.maxy), round4(d.maxz)],
+      },
+      volume_in3: round4(Number(d.vol_in3 ?? 0)),
+    };
   }
 
   async updateFeature(
