@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OnshapeClient = exports.HttpError = void 0;
 const node_url_1 = require("node:url");
+const promises_1 = require("node:timers/promises");
+const READ_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_READ_ATTEMPTS = 5;
+const MAX_RETRY_DELAY_MS = 10_000;
 class HttpError extends Error {
     status;
     detail;
@@ -50,13 +54,19 @@ class OnshapeClient {
         return responseJsonOrStatus(response, "deleted");
     }
     async requestJson(url) {
-        const response = await this.fetchWithAuthRedirects(url, {
-            Accept: "application/json;charset=UTF-8; qs=0.09",
-        });
-        if (!response.ok) {
-            throw new HttpError(response.status, await responseDetail(response));
+        for (let attempt = 1; attempt <= MAX_READ_ATTEMPTS; attempt += 1) {
+            const response = await this.fetchWithAuthRedirects(url, {
+                Accept: "application/json;charset=UTF-8; qs=0.09",
+            });
+            if (response.ok) {
+                return response.json();
+            }
+            if (!READ_RETRY_STATUSES.has(response.status) || attempt === MAX_READ_ATTEMPTS) {
+                throw new HttpError(response.status, await responseDetail(response));
+            }
+            await (0, promises_1.setTimeout)(retryDelayMs(response, attempt));
         }
-        return response.json();
+        throw new Error("unreachable read retry state");
     }
     async fetchWithAuthRedirects(url, headers, method = "GET", body) {
         const auth = Buffer.from(`${this.creds.accessKey}:${this.creds.secretKey}`).toString("base64");
@@ -94,4 +104,18 @@ async function responseJsonOrStatus(response, key) {
     catch {
         return { [key]: true, status: response.status, text: text.slice(0, 500) };
     }
+}
+function retryDelayMs(response, attempt) {
+    const retryAfter = response.headers.get("retry-after");
+    if (retryAfter) {
+        const seconds = Number(retryAfter);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+        }
+        const dateMs = Date.parse(retryAfter);
+        if (Number.isFinite(dateMs)) {
+            return Math.min(Math.max(dateMs - Date.now(), 0), MAX_RETRY_DELAY_MS);
+        }
+    }
+    return Math.min(500 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
 }

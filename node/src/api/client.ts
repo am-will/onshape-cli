@@ -1,6 +1,11 @@
 import { URLSearchParams } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Credentials } from "../credentials";
+
+const READ_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_READ_ATTEMPTS = 5;
+const MAX_RETRY_DELAY_MS = 10_000;
 
 export class HttpError extends Error {
   readonly status: number;
@@ -51,13 +56,19 @@ export class OnshapeClient {
   }
 
   private async requestJson(url: URL): Promise<unknown> {
-    const response = await this.fetchWithAuthRedirects(url, {
-      Accept: "application/json;charset=UTF-8; qs=0.09",
-    });
-    if (!response.ok) {
-      throw new HttpError(response.status, await responseDetail(response));
+    for (let attempt = 1; attempt <= MAX_READ_ATTEMPTS; attempt += 1) {
+      const response = await this.fetchWithAuthRedirects(url, {
+        Accept: "application/json;charset=UTF-8; qs=0.09",
+      });
+      if (response.ok) {
+        return response.json();
+      }
+      if (!READ_RETRY_STATUSES.has(response.status) || attempt === MAX_READ_ATTEMPTS) {
+        throw new HttpError(response.status, await responseDetail(response));
+      }
+      await sleep(retryDelayMs(response, attempt));
     }
-    return response.json();
+    throw new Error("unreachable read retry state");
   }
 
   private async fetchWithAuthRedirects(
@@ -97,4 +108,19 @@ async function responseJsonOrStatus(response: Response, key: string): Promise<un
   } catch {
     return { [key]: true, status: response.status, text: text.slice(0, 500) };
   }
+}
+
+function retryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+    }
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs)) {
+      return Math.min(Math.max(dateMs - Date.now(), 0), MAX_RETRY_DELAY_MS);
+    }
+  }
+  return Math.min(500 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
 }

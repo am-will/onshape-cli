@@ -1,10 +1,18 @@
 """Onshape API client for REST API communication."""
 
+import asyncio
 import base64
+from email.utils import parsedate_to_datetime
+import time
 import httpx
 from typing import Any, Dict, Optional
 from pydantic import BaseModel
 from loguru import logger
+
+
+READ_RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+MAX_READ_ATTEMPTS = 5
+MAX_RETRY_DELAY_SECONDS = 10.0
 
 
 class OnshapeCredentials(BaseModel):
@@ -112,8 +120,18 @@ class OnshapeClient:
 
         self._ensure_client()
         logger.debug(f"GET {url} with params: {self._sanitize_for_logging(params)}")
-        response = await self._client.get(url, params=params, headers=headers)
-        response.raise_for_status()
+        for attempt in range(1, MAX_READ_ATTEMPTS + 1):
+            response = await self._client.get(url, params=params, headers=headers)
+            if response.status_code < 400:
+                break
+            if (
+                response.status_code not in READ_RETRY_STATUSES
+                or attempt == MAX_READ_ATTEMPTS
+            ):
+                response.raise_for_status()
+            await asyncio.sleep(_retry_delay_seconds(response, attempt))
+        else:
+            raise RuntimeError("unreachable read retry state")
         result = response.json()
         logger.debug(f"GET {url} response: {self._sanitize_for_logging(result, max_length=500)}")
         return result
@@ -230,3 +248,20 @@ class OnshapeClient:
         if self._client and self._own_client:
             await self._client.aclose()
             self._client = None
+
+
+def _retry_delay_seconds(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("retry-after")
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+            if seconds >= 0:
+                return min(seconds, MAX_RETRY_DELAY_SECONDS)
+        except ValueError:
+            try:
+                date = parsedate_to_datetime(retry_after)
+                seconds = date.timestamp() - time.time()
+                return min(max(seconds, 0.0), MAX_RETRY_DELAY_SECONDS)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                pass
+    return min(0.5 * 2 ** (attempt - 1), MAX_RETRY_DELAY_SECONDS)
