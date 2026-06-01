@@ -1,0 +1,16 @@
+{
+  "name": "npm-candy-cane",
+  "version": "1.0.0",
+  "description": "High-level npm onshape candy cane demo",
+  "main": "index.js",
+  "scripts": {
+    "demo": "bash ./run-high-level-candy-cane.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "onshape": "https://registry.npmjs.org/onshape/-/onshape-0.1.1.tgz"
+  }
+}
