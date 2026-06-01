@@ -195,3 +195,7 @@ over HTTP but later marking the feature `ERROR` (post-add feature-state validati
   final assertion returned `parts: 1`, `bodies: 1`.
 - 2026-06-01: Fixed a Node parser bug found during the live test: negative numeric
   option values such as `--axis-start -0.05,2.6` were misread as flags.
+- 2026-06-01: Published `onshape@0.1.1`, installed the registry tarball in a clean
+  temp project, and rebuilt the candy cane with `npx onshape`. Final assertion again
+  returned `parts: 1`, `bodies: 1`. Added `demo/npm-candy-cane` as a reusable
+  high-level npm demo project.
