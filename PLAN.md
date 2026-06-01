@@ -106,7 +106,8 @@ and `shaded-view`, comparing Python vs Node on the same inputs against the golde
   identical JSON (run a few `--help`/read commands). Manual: `onshape-cli login` end-to-end.
 - **Node (Phase 2+):** parity suite asserting byte-identical `result` vs Python on the
   same document for the ported commands; credential interop across both CLIs; the 307,
-  FeatureScript-200-`notices`, plane-ID, and inch↔meter cases covered by fixtures.
+  FeatureScript-200-`notices`, plane-ID, inch↔meter, post-add regen status, and
+  negative numeric option-value cases covered by fixtures.
 
 ## Sequencing / where to pause
 
@@ -120,7 +121,8 @@ Implement **Phase 1 first** (the immediate, self-contained win), then **Phase 2*
 envelopes/units/plane IDs (shared constants + golden fixtures + surface manifest in CI);
 Windows plaintext secret (keychain default + warn on fallback); FeatureScript 200-with-
 `notices` mis-ported as success (port `fsvalue` semantics + fixture); keychain absent on
-headless/CI (lazy import, try/catch, file fallback).
+headless/CI (lazy import, try/catch, file fallback); Onshape accepting a feature payload
+over HTTP but later marking the feature `ERROR` (post-add feature-state validation).
 
 ## Acceptance checklist
 
@@ -175,3 +177,21 @@ headless/CI (lazy import, try/catch, file fallback).
   decoding: `get-edges`, `find-circular-edges`, and `find-edges-by-feature`.
   Verified `npm run build`, `npm run check`, and local argument/type JSON exit 2
   checks.
+- 2026-06-01: Published npm package `onshape@0.1.0` and tested it in
+  `demo/npm-candy-cane`. The first candy-cane attempt exposed two follow-up issues:
+  raw feature JSON was too low-level for ergonomic npm use, and API success did not
+  prove the feature regenerated successfully.
+- 2026-06-01: Added Node high-level modeling commands for the candy-cane path
+  (`sketch-circle`, `sketch-circle-axis`, `extrude`, `revolve`, `boolean-union`) plus
+  `validate-partstudio`. Raw and high-level Part Studio feature creation now validates
+  post-add feature state by default and supports `--no-validate`.
+- 2026-06-01: Checked the Python CLI for the same class of problem. It already had
+  high-level modeling commands, but it shared the regen-validation gap, so Part Studio
+  feature creation now validates post-add feature state by default and exposes
+  `--no-validate`; Python also gained `validate-partstudio`.
+- 2026-06-01: Live-tested the new Node high-level workflow in Onshape with a cylindrical
+  one-part candy cane. Verification document:
+  `https://cad.onshape.com/documents/4c99f60a294f844395cab9c7/w/8810a294778a56cc869525a8/e/c202789a6e4b3d31996286eb`;
+  final assertion returned `parts: 1`, `bodies: 1`.
+- 2026-06-01: Fixed a Node parser bug found during the live test: negative numeric
+  option values such as `--axis-start -0.05,2.6` were misread as flags.
