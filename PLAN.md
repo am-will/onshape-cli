@@ -146,3 +146,7 @@ headless/CI (lazy import, try/catch, file fallback).
   storage, legacy file compatibility, MCP fallback, redaction, and owner-only file
   permissions. Verified file round-trip, clear, missing-credential failure, and MCP
   fallback in a temporary home.
+- 2026-06-01: Wired Python CLI credential resolution through `CredentialStore` and
+  added `login`/`logout`. Verified config file round-trip, non-TTY login guard,
+  explicit-key login, auto fallback to file when `keyring` is absent, explicit
+  keychain failure as JSON exit 2, and missing-credential JSON exit 2.

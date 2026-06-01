@@ -33,6 +33,7 @@ import getpass
 import json
 import os
 import sys
+import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -56,76 +57,38 @@ from .builders.sketch import SketchBuilder, SketchPlane
 from .builders.extrude import ExtrudeBuilder, ExtrudeType
 from .builders.thicken import ThickenBuilder
 from .builders import advanced as adv
+from .credentials import (
+    DEFAULT_BASE_URL,
+    CredentialError,
+    CredentialRecord,
+    CredentialStore,
+)
 
 
 # ---------------------------------------------------------------------------
 # Credentials & output helpers
 # ---------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = "https://cad.onshape.com"
-
-
 def config_path() -> Path:
-    """Location of the saved-credentials file.
-
-    Override with ONSHAPE_CONFIG; otherwise ~/.onshape/credentials.json.
-    """
-    override = os.environ.get("ONSHAPE_CONFIG")
-    if override:
-        return Path(override).expanduser()
-    return Path.home() / ".onshape" / "credentials.json"
-
-
-def read_saved_config() -> Dict[str, Any]:
-    """Return the saved credentials dict, or {} if none/unreadable."""
-    path = config_path()
-    if path.exists():
-        try:
-            data = json.loads(path.read_text())
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            pass
-    return {}
-
-
-def write_saved_config(data: Dict[str, Any]) -> Path:
-    """Persist credentials with owner-only permissions; return the path."""
-    path = config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(path.parent, 0o700)
-    except OSError:
-        pass
-    path.write_text(json.dumps(data, indent=2) + "\n")
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
-    return path
+    """Location of the saved-credentials pointer/fallback file."""
+    return CredentialStore().config_path()
 
 
 def load_credentials(args) -> OnshapeCredentials:
-    saved = read_saved_config()
-    access = args.access_key or os.environ.get("ONSHAPE_ACCESS_KEY") or saved.get("access_key")
-    secret = args.secret_key or os.environ.get("ONSHAPE_SECRET_KEY") or saved.get("secret_key")
-    base = os.environ.get("ONSHAPE_BASE_URL") or saved.get("base_url") or DEFAULT_BASE_URL
-    if not (access and secret):
-        cfg = Path.home() / ".claude" / "mcp.json"
-        if cfg.exists():
-            try:
-                data = json.loads(cfg.read_text())
-                env = data["mcpServers"]["onshape"]["env"]
-                access = access or env.get("ONSHAPE_ACCESS_KEY")
-                secret = secret or env.get("ONSHAPE_SECRET_KEY")
-            except Exception:
-                pass
-    if not (access and secret):
-        emit_error("No credentials. Run 'onshape-cli config set', set "
-                   "ONSHAPE_ACCESS_KEY / ONSHAPE_SECRET_KEY, or pass "
-                   "--access-key/--secret-key.")
+    try:
+        creds = CredentialStore().resolve(
+            access_key=getattr(args, "access_key", None),
+            secret_key=getattr(args, "secret_key", None),
+            base_url=getattr(args, "base_url", None),
+        )
+    except CredentialError as exc:
+        emit_error(str(exc))
         sys.exit(2)
-    return OnshapeCredentials(access_key=access, secret_key=secret, base_url=base)
+    return OnshapeCredentials(
+        access_key=creds.access_key,
+        secret_key=creds.secret_key,
+        base_url=creds.base_url,
+    )
 
 
 def _json_default(o: Any):
@@ -166,33 +129,19 @@ def new_feature_id(response: Dict[str, Any]) -> Optional[str]:
 async def handle_config(args) -> None:
     """Manage the saved-credentials file (set / show / path / clear)."""
     action = args.config_action
-    path = config_path()
+    store = CredentialStore()
+    path = store.config_path()
 
     if action == "path":
         emit({"path": str(path)})
         return
 
     if action == "show":
-        saved = read_saved_config()
-        if not saved.get("access_key") or not saved.get("secret_key"):
-            emit({"configured": False, "path": str(path)})
-            return
-        secret = saved.get("secret_key", "")
-        redacted = f"{secret[:3]}…{secret[-3:]}" if len(secret) > 8 else "***"
-        emit({
-            "configured": True,
-            "path": str(path),
-            "access_key": saved.get("access_key"),
-            "secret_key": redacted,
-            "base_url": saved.get("base_url", DEFAULT_BASE_URL),
-        })
+        emit(store.describe().to_dict())
         return
 
     if action == "clear":
-        existed = path.exists()
-        if existed:
-            path.unlink()
-        emit({"cleared": existed, "path": str(path)})
+        emit(store.clear())
         return
 
     # action == "set"
@@ -219,9 +168,117 @@ async def handle_config(args) -> None:
             verified = False
             verify_error = f"{type(exc).__name__}: {exc}"
 
-    saved_path = write_saved_config(
-        {"access_key": access, "secret_key": secret, "base_url": base})
-    result: Dict[str, Any] = {"saved": True, "path": str(saved_path), "verified": verified}
+    try:
+        result = store.save(
+            CredentialRecord(access_key=access, secret_key=secret, base_url=base),
+            store=args.store,
+        )
+    except CredentialError as exc:
+        emit_error(str(exc))
+        sys.exit(2)
+    result["verified"] = verified
+    if verify_error:
+        result["verifyError"] = verify_error
+    emit(result)
+
+
+def _mcp_import_candidate() -> Optional[CredentialRecord]:
+    cfg = Path.home() / ".claude" / "mcp.json"
+    if not cfg.exists():
+        return None
+    try:
+        data = json.loads(cfg.read_text())
+        env = data["mcpServers"]["onshape"]["env"]
+    except Exception:
+        return None
+    access = env.get("ONSHAPE_ACCESS_KEY")
+    secret = env.get("ONSHAPE_SECRET_KEY")
+    base = env.get("ONSHAPE_BASE_URL") or DEFAULT_BASE_URL
+    if access and secret:
+        return CredentialRecord(access_key=access, secret_key=secret, base_url=base)
+    return None
+
+
+def _env_import_candidate() -> Optional[CredentialRecord]:
+    access = os.environ.get("ONSHAPE_ACCESS_KEY")
+    secret = os.environ.get("ONSHAPE_SECRET_KEY")
+    if access and secret:
+        return CredentialRecord(
+            access_key=access,
+            secret_key=secret,
+            base_url=os.environ.get("ONSHAPE_BASE_URL") or DEFAULT_BASE_URL,
+        )
+    return None
+
+
+def _confirm_import(source: str, creds: CredentialRecord) -> bool:
+    prompt = (
+        f"Save Onshape credentials from {source} for {creds.base_url} "
+        f"(access key {creds.access_key})? [Y/n] "
+    )
+    return input(prompt).strip().lower() not in {"n", "no"}
+
+
+async def handle_login(args) -> None:
+    """Save Onshape API credentials with guided paste or import."""
+    access = args.login_access or getattr(args, "access_key", None)
+    secret = args.login_secret or getattr(args, "secret_key", None)
+    base = args.base_url or os.environ.get("ONSHAPE_BASE_URL") or DEFAULT_BASE_URL
+
+    creds: Optional[CredentialRecord] = None
+    if access and secret:
+        creds = CredentialRecord(access_key=access, secret_key=secret, base_url=base)
+    elif not sys.stdin.isatty():
+        emit_error(
+            "login cannot prompt in a non-interactive terminal. Pass "
+            "--access-key and --secret-key, or use config set with flags."
+        )
+        sys.exit(2)
+    else:
+        for source, candidate in (
+            ("environment", _env_import_candidate()),
+            ("~/.claude/mcp.json", _mcp_import_candidate()),
+        ):
+            if candidate and _confirm_import(source, candidate):
+                creds = CredentialRecord(
+                    access_key=candidate.access_key,
+                    secret_key=candidate.secret_key,
+                    base_url=args.base_url or candidate.base_url,
+                )
+                break
+
+    if creds is None:
+        if not args.no_browser:
+            webbrowser.open("https://dev.onshape.com/keys")
+        access = input("Onshape access key: ").strip()
+        secret = getpass.getpass("Onshape secret key: ").strip()
+        if not (access and secret):
+            emit_error("Both an access key and a secret key are required.")
+            sys.exit(2)
+        creds = CredentialRecord(access_key=access, secret_key=secret, base_url=base)
+
+    verified = None
+    verify_error = None
+    if not args.no_verify:
+        try:
+            api_creds = OnshapeCredentials(
+                access_key=creds.access_key,
+                secret_key=creds.secret_key,
+                base_url=creds.base_url,
+            )
+            async with OnshapeClient(api_creds) as client:
+                await client.get("/api/v6/documents", params={"limit": 1})
+            verified = True
+        except Exception as exc:  # noqa: BLE001
+            verified = False
+            verify_error = f"{type(exc).__name__}: {exc}"
+
+    try:
+        result = CredentialStore().save(creds, store=args.store)
+    except CredentialError as exc:
+        emit_error(str(exc))
+        sys.exit(2)
+    result["verified"] = verified
     if verify_error:
         result["verifyError"] = verify_error
     emit(result)
@@ -230,6 +287,12 @@ async def handle_config(args) -> None:
 async def run(args) -> None:
     if args.command == "config":
         await handle_config(args)
+        return
+    if args.command == "login":
+        await handle_login(args)
+        return
+    if args.command == "logout":
+        emit(CredentialStore().clear())
         return
     creds = load_credentials(args)
     async with OnshapeClient(creds) as client:
@@ -690,6 +753,7 @@ def build_parser() -> argparse.ArgumentParser:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--access-key")
     p.add_argument("--secret-key")
+    p.add_argument("--base-url", help=f"API base URL (default {DEFAULT_BASE_URL})")
     sub = p.add_subparsers(dest="command", required=True)
 
     def add_dwe(sp, elem=True):
@@ -707,11 +771,27 @@ def build_parser() -> argparse.ArgumentParser:
     cset.add_argument("--secret-key", dest="cfg_secret",
                       help="Onshape secret key (prompted securely if omitted)")
     cset.add_argument("--base-url", help=f"API base URL (default {DEFAULT_BASE_URL})")
+    cset.add_argument("--store", default="auto", choices=["auto", "file", "keychain"],
+                      help="where to save credentials (default: auto)")
     cset.add_argument("--no-verify", action="store_true",
                       help="skip the API check that confirms the keys work")
     cfg_sub.add_parser("show", help="show saved credentials (secret redacted)")
     cfg_sub.add_parser("path", help="print the credentials file path")
     cfg_sub.add_parser("clear", help="delete the saved credentials file")
+
+    login = sub.add_parser("login", help="save Onshape API credentials")
+    login.add_argument("--access-key", dest="login_access",
+                       help="Onshape access key (prompted/imported if omitted)")
+    login.add_argument("--secret-key", dest="login_secret",
+                       help="Onshape secret key (prompted securely if omitted)")
+    login.add_argument("--base-url", help=f"API base URL (default {DEFAULT_BASE_URL})")
+    login.add_argument("--store", default="auto", choices=["auto", "file", "keychain"],
+                       help="where to save credentials (default: auto)")
+    login.add_argument("--no-browser", action="store_true",
+                       help="do not open the Onshape API keys page")
+    login.add_argument("--no-verify", action="store_true",
+                       help="skip the API check that confirms the keys work")
+    sub.add_parser("logout", help="clear saved Onshape API credentials")
 
     def floats(n):
         return lambda s: [float(x) for x in s.split(",")][:n]
