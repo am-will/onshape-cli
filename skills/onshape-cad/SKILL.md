@@ -120,12 +120,16 @@ element may briefly have none — retry shortly),
 ### Geometry / measure / export
 `measure --doc D --ws W --elem E` — **fastest dimension check**; returns clean
 `{bodies, bbox:{x,y,z,min,max}, volume_in3}` in inches (no FeatureScript needed).
-Use it to verify a build instead of hand-writing `evBox3d`.
+Use it to verify a build instead of hand-writing `evBox3d`. ⚠️ `bbox` axes are
+**world** axes — for a Front-plane profile, `z` is the height and `y` is the
+extrude depth (see *Building from a side profile* below), not what you'd guess.
 `get-edges`, `find-circular-edges [--radius R]`, `find-edges-by-feature --feature FID`,
 `mass-properties`, `export-stl --out part.stl [--resolution coarse|medium|fine]`,
 `export --out part.step --format STEP` (also IGES/3MF/PARASOLID).
 `eval-featurescript --script "<FS>"` returns **decoded** JSON in `result.value`
-by default (`--raw` for the raw BTFSValue tree).
+by default (`--raw` for the raw BTFSValue tree). A `null` value or `ok:false`
+means the script **errored** — the reason is in `detail.notices` (see
+*FeatureScript pitfalls* below); it is not a transient, so read it.
 
 ---
 
@@ -187,8 +191,35 @@ returned `featureStatus` or use the Onshape UI.
 - **Search before creating** (`search-documents`/`list-documents`) so re-runs don't
   spawn `Name (1)`, `Name (1) (1)` duplicates.
 - **Verify with `measure`** after each shaping step (check `bodies` + `bbox`).
+- **Then look at it.** `measure` confirms numbers, not shape — render a
+  `shaded-view` (front + isometric) and actually inspect it. A part can measure
+  correct and still have the wrong hole/slot/orientation; only a render catches that.
 - To **edit** an existing model, target its `--doc/--ws/--elem` directly — never
   recreate it; that's how you avoid overwriting or duplicating the original.
+
+### Building from a side profile — axes (read before sketching a profile)
+A sketch uses its plane's two in-plane axes; `extrude --depth` pushes along the
+plane **normal** (the 3rd axis). For the **Front plane (JCC)**: sketch-X → world X
+(horizontal), sketch-Y → world **Z = height (up)**, and `--depth` → world **Y =
+the side-to-side / into-the-screen thickness**. Consequence: in `measure`'s
+`bbox`, **`z` is height and `y` is the extrude depth** — counterintuitive, double-check it.
+- Decide up front which real dimension is height vs. depth vs. width, map each to
+  sketch-X / sketch-Y / `--depth` **before** writing points, and confirm with
+  `measure` + a render.
+- When a user annotates a dimension on a render, the arrow is in **that on-screen
+  view's** axes — translate it to your sketch X/Y. And "height" of a cradle/cup
+  part often means *up to the seating surface*, not the overall part height —
+  confirm which if there's any doubt.
+
+### FeatureScript pitfalls (`eval-featurescript` / `measure`)
+- A `null` / `ok:false` result is a **script error**, not a flake — the message
+  is in `detail.notices` (e.g. type `SEMANTIC`). Read it before retrying.
+- **Map-key vs. variable name clash:** `var vol = …; return { vol: vol };` is
+  rejected (*"Cannot use vol as map key…"*). Use a distinct key (`vol_in3`) or
+  quote it (`'vol'` / `(vol)`).
+- **Seed accumulators with a typed zero**, not plain `0`: `var v = 0; v += evVolume(...)`
+  throws a units mismatch. Prefer one call over all bodies —
+  `evVolume(context, {entities: qAllModifiableSolidBodies()})` — or seed `0 * meter^3`.
 
 ## 7. Source & extending
 `onshape_cli/cli.py` (dispatcher), `onshape_cli/builders/advanced.py` (feature
