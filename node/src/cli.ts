@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 import { CredentialError, CredentialStore, DEFAULT_BASE_URL, type Credentials, type StoreMode } from "./credentials";
 import { HttpError, OnshapeClient } from "./api/client";
+import { DocumentManager } from "./api/documents";
 import { CliError, emit, emitError } from "./output";
 
 type Options = Record<string, string | boolean>;
@@ -54,7 +55,17 @@ async function run(argv: string[]): Promise<void> {
       emit(new CredentialStore().clear());
       return;
     case "list-documents":
+    case "search-documents":
     case "get-document":
+    case "get-document-summary":
+    case "create-document":
+    case "delete-document":
+    case "update-document":
+    case "get-elements":
+    case "find-part-studios":
+    case "get-workspaces":
+    case "list-versions":
+    case "create-version":
     case "get-features":
     case "mass-properties":
       await handleReadCommand(parsed);
@@ -179,27 +190,73 @@ async function handleLogin(options: Options): Promise<void> {
 async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   const creds = resolveCredentials(parsed.options);
   const client = new OnshapeClient(creds);
+  const docs = new DocumentManager(client);
 
   switch (parsed.command) {
     case "list-documents": {
       const filterMap: Record<string, number | undefined> = { all: undefined, owned: 1, created: 4, shared: 5 };
       const filter = stringOption(parsed.options, "filter") ?? "all";
       emit(
-        normalizeDocumentList(
-          await client.get("/api/v6/documents", {
-          filter: filterMap[filter],
+        await docs.listDocuments({
+          filterType: filterMap[filter],
           limit: numberOption(parsed.options, "limit", 20),
-          offset: 0,
-          sortColumn: stringOption(parsed.options, "sortBy") ?? "modifiedAt",
+          sortBy: stringOption(parsed.options, "sortBy") ?? "modifiedAt",
           sortOrder: stringOption(parsed.options, "sortOrder") ?? "desc",
-          }),
-        ),
+        }),
       );
       return;
     }
-    case "get-document":
-      emit(normalizeDocument(await client.get(`/api/v6/documents/${requiredOption(parsed.options, "doc")}`)));
+    case "search-documents":
+      emit(await docs.searchDocuments(parsed.positionals[0] ?? missing("query"), numberOption(parsed.options, "limit", 20)));
       return;
+    case "get-document":
+      emit(await docs.getDocument(requiredOption(parsed.options, "doc")));
+      return;
+    case "get-document-summary":
+      emit(await docs.getDocumentSummary(requiredOption(parsed.options, "doc")));
+      return;
+    case "create-document":
+      emit(
+        await docs.createDocument(
+          requiredOption(parsed.options, "name"),
+          Boolean(parsed.options.public),
+          stringOption(parsed.options, "description"),
+        ),
+      );
+      return;
+    case "delete-document":
+      emit(await docs.deleteDocument(requiredOption(parsed.options, "doc")));
+      return;
+    case "update-document":
+      emit(
+        await docs.updateDocument(
+          requiredOption(parsed.options, "doc"),
+          stringOption(parsed.options, "name"),
+          stringOption(parsed.options, "description"),
+        ),
+      );
+      return;
+    case "get-elements": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await docs.getElements(doc, ws, stringOption(parsed.options, "type")));
+      return;
+    }
+    case "find-part-studios": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await docs.findPartStudios(doc, ws, stringOption(parsed.options, "name")));
+      return;
+    }
+    case "get-workspaces":
+      emit(await docs.getWorkspaces(requiredOption(parsed.options, "doc")));
+      return;
+    case "list-versions":
+      emit(await docs.getVersions(requiredOption(parsed.options, "doc")));
+      return;
+    case "create-version": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await docs.createVersion(doc, ws, requiredOption(parsed.options, "name"), stringOption(parsed.options, "description")));
+      return;
+    }
     case "get-features": {
       const { doc, ws, elem } = dwe(parsed.options);
       emit(
@@ -221,32 +278,6 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   }
 }
 
-function normalizeDocumentList(response: unknown): unknown[] {
-  const items = isRecord(response) && Array.isArray(response.items) ? response.items : [];
-  return items.map(normalizeDocument).filter(Boolean);
-}
-
-function normalizeDocument(response: unknown): Record<string, unknown> | null {
-  if (!isRecord(response)) return null;
-  const owner = isRecord(response.owner) ? response.owner : {};
-  const thumbnail = isRecord(response.thumbnail) ? response.thumbnail.href : null;
-  return {
-    id: response.id ?? null,
-    name: response.name ?? null,
-    created_at: response.createdAt ?? null,
-    modified_at: response.modifiedAt ?? null,
-    owner_id: owner.id ?? "",
-    owner_name: owner.name ?? null,
-    public: response.public ?? false,
-    description: response.description ?? null,
-    thumbnail,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function resolveCredentials(options: Options): Credentials {
   return new CredentialStore().resolve({
     accessKey: stringOption(options, "accessKey"),
@@ -260,6 +291,13 @@ function dwe(options: Options): { doc: string; ws: string; elem: string } {
     doc: stringOption(options, "doc") ?? process.env.ONSHAPE_DOC ?? missing("doc"),
     ws: stringOption(options, "ws") ?? process.env.ONSHAPE_WS ?? missing("ws"),
     elem: stringOption(options, "elem") ?? process.env.ONSHAPE_ELEM ?? missing("elem"),
+  };
+}
+
+function docWorkspace(options: Options): { doc: string; ws: string } {
+  return {
+    doc: stringOption(options, "doc") ?? process.env.ONSHAPE_DOC ?? missing("doc"),
+    ws: stringOption(options, "ws") ?? process.env.ONSHAPE_WS ?? missing("ws"),
   };
 }
 
@@ -298,7 +336,17 @@ Commands:
   logout
   config set|show|path|clear
   list-documents
+  search-documents
   get-document
+  get-document-summary
+  create-document
+  delete-document
+  update-document
+  get-elements
+  find-part-studios
+  get-workspaces
+  list-versions
+  create-version
   get-features
   mass-properties
 `);

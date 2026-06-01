@@ -38,6 +38,7 @@ const promises_1 = require("node:readline/promises");
 const node_process_1 = require("node:process");
 const credentials_1 = require("./credentials");
 const client_1 = require("./api/client");
+const documents_1 = require("./api/documents");
 const output_1 = require("./output");
 async function main(argv) {
     try {
@@ -79,7 +80,17 @@ async function run(argv) {
             (0, output_1.emit)(new credentials_1.CredentialStore().clear());
             return;
         case "list-documents":
+        case "search-documents":
         case "get-document":
+        case "get-document-summary":
+        case "create-document":
+        case "delete-document":
+        case "update-document":
+        case "get-elements":
+        case "find-part-studios":
+        case "get-workspaces":
+        case "list-versions":
+        case "create-version":
         case "get-features":
         case "mass-properties":
             await handleReadCommand(parsed);
@@ -201,22 +212,58 @@ async function handleLogin(options) {
 async function handleReadCommand(parsed) {
     const creds = resolveCredentials(parsed.options);
     const client = new client_1.OnshapeClient(creds);
+    const docs = new documents_1.DocumentManager(client);
     switch (parsed.command) {
         case "list-documents": {
             const filterMap = { all: undefined, owned: 1, created: 4, shared: 5 };
             const filter = stringOption(parsed.options, "filter") ?? "all";
-            (0, output_1.emit)(normalizeDocumentList(await client.get("/api/v6/documents", {
-                filter: filterMap[filter],
+            (0, output_1.emit)(await docs.listDocuments({
+                filterType: filterMap[filter],
                 limit: numberOption(parsed.options, "limit", 20),
-                offset: 0,
-                sortColumn: stringOption(parsed.options, "sortBy") ?? "modifiedAt",
+                sortBy: stringOption(parsed.options, "sortBy") ?? "modifiedAt",
                 sortOrder: stringOption(parsed.options, "sortOrder") ?? "desc",
-            })));
+            }));
             return;
         }
-        case "get-document":
-            (0, output_1.emit)(normalizeDocument(await client.get(`/api/v6/documents/${requiredOption(parsed.options, "doc")}`)));
+        case "search-documents":
+            (0, output_1.emit)(await docs.searchDocuments(parsed.positionals[0] ?? missing("query"), numberOption(parsed.options, "limit", 20)));
             return;
+        case "get-document":
+            (0, output_1.emit)(await docs.getDocument(requiredOption(parsed.options, "doc")));
+            return;
+        case "get-document-summary":
+            (0, output_1.emit)(await docs.getDocumentSummary(requiredOption(parsed.options, "doc")));
+            return;
+        case "create-document":
+            (0, output_1.emit)(await docs.createDocument(requiredOption(parsed.options, "name"), Boolean(parsed.options.public), stringOption(parsed.options, "description")));
+            return;
+        case "delete-document":
+            (0, output_1.emit)(await docs.deleteDocument(requiredOption(parsed.options, "doc")));
+            return;
+        case "update-document":
+            (0, output_1.emit)(await docs.updateDocument(requiredOption(parsed.options, "doc"), stringOption(parsed.options, "name"), stringOption(parsed.options, "description")));
+            return;
+        case "get-elements": {
+            const { doc, ws } = docWorkspace(parsed.options);
+            (0, output_1.emit)(await docs.getElements(doc, ws, stringOption(parsed.options, "type")));
+            return;
+        }
+        case "find-part-studios": {
+            const { doc, ws } = docWorkspace(parsed.options);
+            (0, output_1.emit)(await docs.findPartStudios(doc, ws, stringOption(parsed.options, "name")));
+            return;
+        }
+        case "get-workspaces":
+            (0, output_1.emit)(await docs.getWorkspaces(requiredOption(parsed.options, "doc")));
+            return;
+        case "list-versions":
+            (0, output_1.emit)(await docs.getVersions(requiredOption(parsed.options, "doc")));
+            return;
+        case "create-version": {
+            const { doc, ws } = docWorkspace(parsed.options);
+            (0, output_1.emit)(await docs.createVersion(doc, ws, requiredOption(parsed.options, "name"), stringOption(parsed.options, "description")));
+            return;
+        }
         case "get-features": {
             const { doc, ws, elem } = dwe(parsed.options);
             (0, output_1.emit)(await client.get(`/api/v9/partstudios/d/${doc}/w/${ws}/e/${elem}/features`, {
@@ -233,30 +280,6 @@ async function handleReadCommand(parsed) {
         }
     }
 }
-function normalizeDocumentList(response) {
-    const items = isRecord(response) && Array.isArray(response.items) ? response.items : [];
-    return items.map(normalizeDocument).filter(Boolean);
-}
-function normalizeDocument(response) {
-    if (!isRecord(response))
-        return null;
-    const owner = isRecord(response.owner) ? response.owner : {};
-    const thumbnail = isRecord(response.thumbnail) ? response.thumbnail.href : null;
-    return {
-        id: response.id ?? null,
-        name: response.name ?? null,
-        created_at: response.createdAt ?? null,
-        modified_at: response.modifiedAt ?? null,
-        owner_id: owner.id ?? "",
-        owner_name: owner.name ?? null,
-        public: response.public ?? false,
-        description: response.description ?? null,
-        thumbnail,
-    };
-}
-function isRecord(value) {
-    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 function resolveCredentials(options) {
     return new credentials_1.CredentialStore().resolve({
         accessKey: stringOption(options, "accessKey"),
@@ -269,6 +292,12 @@ function dwe(options) {
         doc: stringOption(options, "doc") ?? process.env.ONSHAPE_DOC ?? missing("doc"),
         ws: stringOption(options, "ws") ?? process.env.ONSHAPE_WS ?? missing("ws"),
         elem: stringOption(options, "elem") ?? process.env.ONSHAPE_ELEM ?? missing("elem"),
+    };
+}
+function docWorkspace(options) {
+    return {
+        doc: stringOption(options, "doc") ?? process.env.ONSHAPE_DOC ?? missing("doc"),
+        ws: stringOption(options, "ws") ?? process.env.ONSHAPE_WS ?? missing("ws"),
     };
 }
 function stringOption(options, key) {
@@ -302,7 +331,17 @@ Commands:
   logout
   config set|show|path|clear
   list-documents
+  search-documents
   get-document
+  get-document-summary
+  create-document
+  delete-document
+  update-document
+  get-elements
+  find-part-studios
+  get-workspaces
+  list-versions
+  create-version
   get-features
   mass-properties
 `);

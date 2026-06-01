@@ -30,6 +30,25 @@ class OnshapeClient {
         }
         return this.requestJson(url);
     }
+    async post(path, data) {
+        const response = await this.fetchWithAuthRedirects(new URL(path, this.creds.baseUrl), {
+            Accept: "application/json;charset=UTF-8; qs=0.09",
+            "Content-Type": "application/json;charset=UTF-8; qs=0.09",
+        }, "POST", data === undefined ? undefined : JSON.stringify(data));
+        if (!response.ok) {
+            throw new HttpError(response.status, await responseDetail(response));
+        }
+        return responseJsonOrStatus(response, "ok");
+    }
+    async delete(path) {
+        const response = await this.fetchWithAuthRedirects(new URL(path, this.creds.baseUrl), {
+            Accept: "application/json;charset=UTF-8; qs=0.09",
+        }, "DELETE");
+        if (!response.ok) {
+            throw new HttpError(response.status, await responseDetail(response));
+        }
+        return responseJsonOrStatus(response, "deleted");
+    }
     async requestJson(url) {
         const response = await this.fetchWithAuthRedirects(url, {
             Accept: "application/json;charset=UTF-8; qs=0.09",
@@ -39,12 +58,12 @@ class OnshapeClient {
         }
         return response.json();
     }
-    async fetchWithAuthRedirects(url, headers) {
+    async fetchWithAuthRedirects(url, headers, method = "GET", body) {
         const auth = Buffer.from(`${this.creds.accessKey}:${this.creds.secretKey}`).toString("base64");
         const requestHeaders = { ...headers, Authorization: `Basic ${auth}` };
         let current = url;
         for (let hop = 0; hop < 5; hop += 1) {
-            const response = await fetch(current, { headers: requestHeaders, redirect: "manual" });
+            const response = await fetch(current, { method, body, headers: requestHeaders, redirect: "manual" });
             if (![301, 302, 303, 307, 308].includes(response.status))
                 return response;
             const location = response.headers.get("location");
@@ -52,7 +71,7 @@ class OnshapeClient {
                 return response;
             current = new URL(location, current);
         }
-        return fetch(current, { headers: requestHeaders, redirect: "manual" });
+        return fetch(current, { method, body, headers: requestHeaders, redirect: "manual" });
     }
 }
 exports.OnshapeClient = OnshapeClient;
@@ -63,5 +82,16 @@ async function responseDetail(response) {
     }
     catch {
         return text.slice(0, 1000);
+    }
+}
+async function responseJsonOrStatus(response, key) {
+    const text = await response.text();
+    if (!text)
+        return { [key]: true, status: response.status };
+    try {
+        return JSON.parse(text);
+    }
+    catch {
+        return { [key]: true, status: response.status, text: text.slice(0, 500) };
     }
 }

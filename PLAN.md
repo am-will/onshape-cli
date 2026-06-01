@@ -161,3 +161,8 @@ headless/CI (lazy import, try/catch, file fallback).
   `mass-properties`). Verified `npm run build`, `npm run check`, Node write/Python
   read, Python write/Node read, explicit-key Node login, missing-credential exit 2,
   and unknown-command exit 2.
+- 2026-06-01: Began Phase 3 by porting the Node document command group:
+  `search-documents`, `get-document-summary`, `create-document`, `delete-document`,
+  `update-document`, `get-elements`, `find-part-studios`, `get-workspaces`,
+  `list-versions`, and `create-version`. Verified `npm run build`, `npm run check`,
+  and required-argument JSON exit 2 checks without making live API calls.
