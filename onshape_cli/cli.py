@@ -124,6 +124,71 @@ def new_feature_id(response: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def validate_partstudio_feature(
+    ps: PartStudioManager,
+    doc: str,
+    ws: str,
+    elem: str,
+    feature_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Fail fast when Onshape accepted a feature but regen marked it ERROR."""
+    if not feature_id:
+        return None
+    features = await ps.get_features(doc, ws, elem)
+    states = features.get("featureStates") if isinstance(features, dict) else None
+    state = states.get(feature_id) if isinstance(states, dict) else None
+    status = state.get("featureStatus") if isinstance(state, dict) else None
+    if status == "ERROR":
+        raise RuntimeError(f"Feature {feature_id} regenerated with status ERROR.")
+    return {"featureId": feature_id, "featureStatus": status}
+
+
+async def emit_partstudio_feature(
+    ps: PartStudioManager,
+    doc: str,
+    ws: str,
+    elem: str,
+    response: Dict[str, Any],
+    *,
+    validate: bool = True,
+) -> None:
+    feature_id = new_feature_id(response)
+    result: Dict[str, Any] = {"featureId": feature_id, "response": response}
+    if validate:
+        validation = await validate_partstudio_feature(ps, doc, ws, elem, feature_id)
+        if validation:
+            result["validation"] = validation
+    emit(result)
+
+
+async def validate_partstudio(
+    ps: PartStudioManager,
+    exporter: ExportManager,
+    doc: str,
+    ws: str,
+    elem: str,
+    *,
+    expect_parts: Optional[int] = None,
+    expect_bodies: Optional[int] = None,
+) -> Dict[str, Any]:
+    parts = await ps.get_parts(doc, ws, elem)
+    mass = await exporter.mass_properties(doc, ws, elem)
+    bodies = mass.get("bodies") if isinstance(mass, dict) else None
+    body_count = len(bodies) if isinstance(bodies, dict) else 0
+    part_count = len(parts) if isinstance(parts, list) else 0
+
+    if expect_parts is not None and part_count != expect_parts:
+        raise RuntimeError(f"Expected {expect_parts} part(s), found {part_count}.")
+    if expect_bodies is not None and body_count != expect_bodies:
+        raise RuntimeError(f"Expected {expect_bodies} bod(y/ies), found {body_count}.")
+
+    return {
+        "parts": part_count,
+        "bodies": body_count,
+        "partIds": [p.get("partId") for p in parts if isinstance(p, dict) and p.get("partId")],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Command handlers (each async, receives client + args)
 # ---------------------------------------------------------------------------
@@ -343,6 +408,13 @@ async def run(args) -> None:
         elif cmd == "get-parts":
             doc, ws, elem = dwe(args)
             emit(await ps.get_parts(doc, ws, elem))
+        elif cmd == "validate-partstudio":
+            doc, ws, elem = dwe(args)
+            emit(await validate_partstudio(
+                ps, exporter, doc, ws, elem,
+                expect_parts=args.expect_parts,
+                expect_bodies=args.expect_bodies,
+            ))
         elif cmd == "get-features":
             doc, ws, elem = dwe(args)
             emit(await ps.get_features(doc, ws, elem,
@@ -433,13 +505,15 @@ async def run(args) -> None:
             if args.depth_var:
                 builder.set_depth(args.depth, args.depth_var)
             resp = await ps.add_feature(doc, ws, elem, builder.build())
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "thicken":
             doc, ws, elem = dwe(args)
             builder = ThickenBuilder(name=args.name, sketch_feature_id=args.sketch,
                                      thickness=args.thickness)
             resp = await ps.add_feature(doc, ws, elem, builder.build())
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "fillet":
             doc, ws, elem = dwe(args)
             feat = adv.build_fillet(
@@ -448,7 +522,8 @@ async def run(args) -> None:
                 select_all=args.all, circular=args.circular,
                 query_string=args.query, fillet_type=args.type)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "chamfer":
             doc, ws, elem = dwe(args)
             feat = adv.build_chamfer(
@@ -457,7 +532,8 @@ async def run(args) -> None:
                 select_all=args.all, circular=args.circular,
                 query_string=args.query, chamfer_type=args.type, angle=args.angle)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "shell":
             doc, ws, elem = dwe(args)
             feat = adv.build_shell(
@@ -465,7 +541,8 @@ async def run(args) -> None:
                 face_ids=_split(args.faces), query_string=args.query,
                 inward=not args.outward)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "revolve":
             doc, ws, elem = dwe(args)
             feat = adv.build_revolve(
@@ -473,7 +550,8 @@ async def run(args) -> None:
                 axis_query=args.axis, axis_ids=_split(args.axis_ids),
                 operation_type=args.op, revolve_type=args.type, angle=args.angle)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "boolean":
             doc, ws, elem = dwe(args)
             feat = adv.build_boolean(
@@ -481,7 +559,8 @@ async def run(args) -> None:
                 tools_query=args.tools, tool_ids=_split(args.tool_ids),
                 targets_query=args.targets, keep_tools=args.keep_tools)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "mirror":
             doc, ws, elem = dwe(args)
             feat = adv.build_mirror(
@@ -490,7 +569,8 @@ async def run(args) -> None:
                 mirror_plane_ids=_split(args.plane_ids),
                 mirror_plane_query=args.plane_query)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "linear-pattern":
             doc, ws, elem = dwe(args)
             feat = adv.build_linear_pattern(
@@ -500,7 +580,8 @@ async def run(args) -> None:
                 distance=args.distance, instance_count=args.count,
                 opposite=args.opposite)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "circular-pattern":
             doc, ws, elem = dwe(args)
             feat = adv.build_circular_pattern(
@@ -510,14 +591,16 @@ async def run(args) -> None:
                 instance_count=args.count, angle=args.angle,
                 equal_spacing=not args.no_equal_spacing)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "offset-plane":
             doc, ws, elem = dwe(args)
             feat = adv.build_offset_plane(
                 name=args.name, base_plane_ids=_split(args.base_ids),
                 base_plane_query=args.base_query, offset=args.offset)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
 
         # ---- Edges ----
         elif cmd == "get-edges":
@@ -535,7 +618,8 @@ async def run(args) -> None:
             doc, ws, elem = dwe(args)
             feature = _load_json(args.json, args.json_file)
             resp = await ps.add_feature(doc, ws, elem, feature)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
         elif cmd == "update-feature":
             doc, ws, elem = dwe(args)
             feature = _load_json(args.json, args.json_file)
@@ -549,7 +633,8 @@ async def run(args) -> None:
                                    neutral_plane_query=args.neutral,
                                    face_query=args.faces)
             resp = await ps.add_feature(doc, ws, elem, feat)
-            emit({"featureId": new_feature_id(resp), "response": resp})
+            await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                          validate=not getattr(args, "no_validate", False))
 
         # ---- Configurations ----
         elif cmd == "get-configuration":
@@ -728,7 +813,8 @@ async def _create_sketch(ps: PartStudioManager, args) -> None:
             builder.add_arc(tuple(e["start"]), tuple(e["end"]), tuple(e["mid"]),
                             e.get("construction", False))
     resp = await ps.add_feature(doc, ws, elem, builder.build(plane_id))
-    emit({"featureId": new_feature_id(resp), "response": resp})
+    await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                  validate=not getattr(args, "no_validate", False))
 
 
 async def _create_simple_sketch(ps: PartStudioManager, args, cmd) -> None:
@@ -743,7 +829,8 @@ async def _create_simple_sketch(ps: PartStudioManager, args, cmd) -> None:
     elif cmd == "sketch-line":
         builder.add_line(tuple(args.start), tuple(args.end))
     resp = await ps.add_feature(doc, ws, elem, builder.build(plane_id))
-    emit({"featureId": new_feature_id(resp), "response": resp})
+    await emit_partstudio_feature(ps, doc, ws, elem, resp,
+                                  validate=not getattr(args, "no_validate", False))
 
 
 # ---------------------------------------------------------------------------
@@ -763,6 +850,10 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--ws")
         if elem:
             sp.add_argument("--elem")
+
+    def add_no_validate(sp):
+        sp.add_argument("--no-validate", action="store_true",
+                        help="skip post-add feature-state validation")
 
     # Credentials config (no API call needed except optional verify)
     cfg = sub.add_parser("config", help="save or inspect Onshape API credentials")
@@ -813,6 +904,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("get-elements"); add_dwe(s, elem=False); s.add_argument("--type")
     s = sub.add_parser("find-part-studios"); add_dwe(s, elem=False); s.add_argument("--name")
     s = sub.add_parser("get-parts"); add_dwe(s)
+    s = sub.add_parser("validate-partstudio"); add_dwe(s)
+    s.add_argument("--expect-parts", type=int); s.add_argument("--expect-bodies", type=int)
     s = sub.add_parser("get-features"); add_dwe(s); s.add_argument("--configuration")
     s = sub.add_parser("get-feature-specs"); add_dwe(s)
     s = sub.add_parser("get-sketch-info"); add_dwe(s); s.add_argument("--sketch")
@@ -829,6 +922,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Raw feature access (power tools)
     s = sub.add_parser("add-feature"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--json", help="raw feature JSON (BTFeatureDefinitionCall-1406 envelope)")
     s.add_argument("--json-file", help="path to a file with the feature JSON")
     s = sub.add_parser("update-feature"); add_dwe(s); s.add_argument("--feature", required=True)
@@ -836,6 +930,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("rollback"); add_dwe(s)
     s.add_argument("--index", type=int, required=True, help="-1 = end of feature list")
     s = sub.add_parser("draft"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Draft"); s.add_argument("--angle", type=float, default=3.0)
     s.add_argument("--neutral", required=True, help="FeatureScript query for the neutral plane")
     s.add_argument("--faces", required=True, help="FeatureScript query for faces to draft")
@@ -922,23 +1017,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Sketch (full)
     s = sub.add_parser("create-sketch"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Sketch"); s.add_argument("--plane", default="Front")
     s.add_argument("--entities", required=True, help="JSON array of sketch entities")
     # Sketch (simple)
     s = sub.add_parser("sketch-rectangle"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Sketch"); s.add_argument("--plane", default="Front")
     s.add_argument("--corner1", type=floats(2), required=True)
     s.add_argument("--corner2", type=floats(2), required=True)
     s = sub.add_parser("sketch-circle"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Sketch"); s.add_argument("--plane", default="Front")
     s.add_argument("--center", type=floats(2), required=True); s.add_argument("--radius", type=float, required=True)
     s = sub.add_parser("sketch-line"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Sketch"); s.add_argument("--plane", default="Front")
     s.add_argument("--start", type=floats(2), required=True); s.add_argument("--end", type=floats(2), required=True)
 
     # Extrude / hole
     for name in ("extrude", "hole"):
         s = sub.add_parser(name); add_dwe(s)
+        add_no_validate(s)
         s.add_argument("--name", default=name.capitalize())
         s.add_argument("--sketch", required=True)
         s.add_argument("--depth", type=float, required=True)
@@ -947,12 +1047,14 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--op", default="NEW", choices=["NEW", "ADD", "REMOVE", "INTERSECT"])
 
     s = sub.add_parser("thicken"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Thicken"); s.add_argument("--sketch", required=True)
     s.add_argument("--thickness", type=float, required=True)
 
     # Fillet / chamfer (the fixed ones)
     for name in ("fillet", "chamfer"):
         s = sub.add_parser(name); add_dwe(s)
+        add_no_validate(s)
         s.add_argument("--name", default=name.capitalize())
         s.add_argument("--edges", help="comma-separated deterministic edge IDs")
         s.add_argument("--feature", help="fillet/chamfer all edges of this feature ID")
@@ -969,12 +1071,14 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--angle", type=float)
 
     s = sub.add_parser("shell"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Shell"); s.add_argument("--thickness", type=float, default=0.125)
     s.add_argument("--faces", help="comma-separated face IDs to remove")
     s.add_argument("--query", help="FeatureScript query for faces to remove")
     s.add_argument("--outward", action="store_true")
 
     s = sub.add_parser("revolve"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Revolve"); s.add_argument("--sketch", required=True)
     s.add_argument("--axis", help="FeatureScript query for the axis")
     s.add_argument("--axis-ids", help="deterministic edge IDs for the axis (most reliable)")
@@ -982,6 +1086,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--type", default="FULL"); s.add_argument("--angle", type=float, default=360.0)
 
     s = sub.add_parser("boolean"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Boolean")
     s.add_argument("--op", default="UNION", choices=["UNION", "SUBTRACTION", "INTERSECTION"])
     s.add_argument("--tools", help="FeatureScript query for tool bodies")
@@ -990,12 +1095,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--keep-tools", action="store_true")
 
     s = sub.add_parser("mirror"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Mirror"); s.add_argument("--type", default="PART")
     s.add_argument("--entities", required=True, help="FeatureScript query for entities")
     s.add_argument("--plane-ids", help="comma-separated plane IDs (e.g. JEC)")
     s.add_argument("--plane-query", help="FeatureScript query for mirror plane")
 
     s = sub.add_parser("linear-pattern"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Linear Pattern"); s.add_argument("--type", default="PART")
     s.add_argument("--entities", required=True)
     s.add_argument("--direction", help="FeatureScript query for the direction edge/axis")
@@ -1004,6 +1111,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--opposite", action="store_true")
 
     s = sub.add_parser("circular-pattern"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Circular Pattern"); s.add_argument("--type", default="PART")
     s.add_argument("--entities", required=True)
     s.add_argument("--axis", help="FeatureScript query for the axis edge")
@@ -1012,6 +1120,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-equal-spacing", action="store_true")
 
     s = sub.add_parser("offset-plane"); add_dwe(s)
+    add_no_validate(s)
     s.add_argument("--name", default="Plane")
     s.add_argument("--base-ids", help="comma-separated base plane IDs")
     s.add_argument("--base-query"); s.add_argument("--offset", type=float, default=1.0)
