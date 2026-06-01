@@ -4,8 +4,8 @@ exports.OnshapeClient = exports.HttpError = void 0;
 const node_url_1 = require("node:url");
 const promises_1 = require("node:timers/promises");
 const READ_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
-const MAX_READ_ATTEMPTS = 5;
-const MAX_RETRY_DELAY_MS = 10_000;
+const MAX_READ_ATTEMPTS = 8;
+const MAX_RETRY_DELAY_MS = 30_000;
 class HttpError extends Error {
     status;
     detail;
@@ -117,5 +117,5 @@ function retryDelayMs(response, attempt) {
             return Math.min(Math.max(dateMs - Date.now(), 0), MAX_RETRY_DELAY_MS);
         }
     }
-    return Math.min(500 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
+    return Math.min(1000 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
 }

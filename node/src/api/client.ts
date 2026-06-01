@@ -4,8 +4,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Credentials } from "../credentials";
 
 const READ_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
-const MAX_READ_ATTEMPTS = 5;
-const MAX_RETRY_DELAY_MS = 10_000;
+const MAX_READ_ATTEMPTS = 8;
+const MAX_RETRY_DELAY_MS = 30_000;
 
 export class HttpError extends Error {
   readonly status: number;
@@ -122,5 +122,5 @@ function retryDelayMs(response: Response, attempt: number): number {
       return Math.min(Math.max(dateMs - Date.now(), 0), MAX_RETRY_DELAY_MS);
     }
   }
-  return Math.min(500 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
+  return Math.min(1000 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
 }

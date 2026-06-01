@@ -11,8 +11,8 @@ from loguru import logger
 
 
 READ_RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
-MAX_READ_ATTEMPTS = 5
-MAX_RETRY_DELAY_SECONDS = 10.0
+MAX_READ_ATTEMPTS = 8
+MAX_RETRY_DELAY_SECONDS = 30.0
 
 
 class OnshapeCredentials(BaseModel):
@@ -264,4 +264,4 @@ def _retry_delay_seconds(response: httpx.Response, attempt: int) -> float:
                 return min(max(seconds, 0.0), MAX_RETRY_DELAY_SECONDS)
             except (TypeError, ValueError, IndexError, OverflowError):
                 pass
-    return min(0.5 * 2 ** (attempt - 1), MAX_RETRY_DELAY_SECONDS)
+    return min(1.0 * 2 ** (attempt - 1), MAX_RETRY_DELAY_SECONDS)

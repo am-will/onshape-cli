@@ -1,6 +1,6 @@
 {
   "name": "onshape",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Node.js CLI for Onshape CAD automation with the same JSON contract as onshape-cli.",
   "license": "MIT",
   "type": "commonjs",
