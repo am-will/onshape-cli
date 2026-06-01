@@ -142,3 +142,7 @@ headless/CI (lazy import, try/catch, file fallback).
   implementation.
 - 2026-06-01: Added shared credential and constants specs for Phase 1. Verified both
   files parse as JSON.
+- 2026-06-01: Added standalone Python `CredentialStore` with file/keychain/auto
+  storage, legacy file compatibility, MCP fallback, redaction, and owner-only file
+  permissions. Verified file round-trip, clear, missing-credential failure, and MCP
+  fallback in a temporary home.
