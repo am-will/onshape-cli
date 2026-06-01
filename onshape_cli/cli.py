@@ -7,7 +7,12 @@ as a subcommand. Output is JSON on stdout so agents can parse it.
 Credentials are read from (in order):
   1. --access-key / --secret-key flags
   2. ONSHAPE_ACCESS_KEY / ONSHAPE_SECRET_KEY env vars
-  3. ~/.claude/mcp.json  (the "onshape" server's env block)
+  3. ~/.onshape/credentials.json  (written by `onshape-cli config set`)
+  4. ~/.claude/mcp.json  (the "onshape" server's env block)
+
+Save credentials once with:
+  onshape-cli config set            # prompts for keys (secret hidden)
+  onshape-cli config show           # show what's saved (secret redacted)
 
 Document/workspace/element default to ONSHAPE_DOC / ONSHAPE_WS / ONSHAPE_ELEM
 env vars when the corresponding flags are omitted.
@@ -24,6 +29,7 @@ Examples:
 
 import argparse
 import asyncio
+import getpass
 import json
 import os
 import sys
@@ -56,10 +62,54 @@ from .builders import advanced as adv
 # Credentials & output helpers
 # ---------------------------------------------------------------------------
 
+DEFAULT_BASE_URL = "https://cad.onshape.com"
+
+
+def config_path() -> Path:
+    """Location of the saved-credentials file.
+
+    Override with ONSHAPE_CONFIG; otherwise ~/.onshape/credentials.json.
+    """
+    override = os.environ.get("ONSHAPE_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".onshape" / "credentials.json"
+
+
+def read_saved_config() -> Dict[str, Any]:
+    """Return the saved credentials dict, or {} if none/unreadable."""
+    path = config_path()
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def write_saved_config(data: Dict[str, Any]) -> Path:
+    """Persist credentials with owner-only permissions; return the path."""
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
+
+
 def load_credentials(args) -> OnshapeCredentials:
-    access = args.access_key or os.environ.get("ONSHAPE_ACCESS_KEY")
-    secret = args.secret_key or os.environ.get("ONSHAPE_SECRET_KEY")
-    base = os.environ.get("ONSHAPE_BASE_URL", "https://cad.onshape.com")
+    saved = read_saved_config()
+    access = args.access_key or os.environ.get("ONSHAPE_ACCESS_KEY") or saved.get("access_key")
+    secret = args.secret_key or os.environ.get("ONSHAPE_SECRET_KEY") or saved.get("secret_key")
+    base = os.environ.get("ONSHAPE_BASE_URL") or saved.get("base_url") or DEFAULT_BASE_URL
     if not (access and secret):
         cfg = Path.home() / ".claude" / "mcp.json"
         if cfg.exists():
@@ -71,8 +121,9 @@ def load_credentials(args) -> OnshapeCredentials:
             except Exception:
                 pass
     if not (access and secret):
-        emit_error("No credentials. Set ONSHAPE_ACCESS_KEY / ONSHAPE_SECRET_KEY "
-                   "or pass --access-key/--secret-key.")
+        emit_error("No credentials. Run 'onshape-cli config set', set "
+                   "ONSHAPE_ACCESS_KEY / ONSHAPE_SECRET_KEY, or pass "
+                   "--access-key/--secret-key.")
         sys.exit(2)
     return OnshapeCredentials(access_key=access, secret_key=secret, base_url=base)
 
@@ -112,7 +163,74 @@ def new_feature_id(response: Dict[str, Any]) -> Optional[str]:
 # Command handlers (each async, receives client + args)
 # ---------------------------------------------------------------------------
 
+async def handle_config(args) -> None:
+    """Manage the saved-credentials file (set / show / path / clear)."""
+    action = args.config_action
+    path = config_path()
+
+    if action == "path":
+        emit({"path": str(path)})
+        return
+
+    if action == "show":
+        saved = read_saved_config()
+        if not saved.get("access_key") or not saved.get("secret_key"):
+            emit({"configured": False, "path": str(path)})
+            return
+        secret = saved.get("secret_key", "")
+        redacted = f"{secret[:3]}…{secret[-3:]}" if len(secret) > 8 else "***"
+        emit({
+            "configured": True,
+            "path": str(path),
+            "access_key": saved.get("access_key"),
+            "secret_key": redacted,
+            "base_url": saved.get("base_url", DEFAULT_BASE_URL),
+        })
+        return
+
+    if action == "clear":
+        existed = path.exists()
+        if existed:
+            path.unlink()
+        emit({"cleared": existed, "path": str(path)})
+        return
+
+    # action == "set"
+    access = args.cfg_access
+    secret = args.cfg_secret
+    if not access:
+        access = input("Onshape access key: ").strip()
+    if not secret:
+        secret = getpass.getpass("Onshape secret key: ").strip()
+    if not (access and secret):
+        emit_error("Both an access key and a secret key are required.")
+        sys.exit(2)
+    base = args.base_url or DEFAULT_BASE_URL
+
+    verified = None
+    verify_error = None
+    if not args.no_verify:
+        try:
+            creds = OnshapeCredentials(access_key=access, secret_key=secret, base_url=base)
+            async with OnshapeClient(creds) as client:
+                await client.get("/api/v6/documents", params={"limit": 1})
+            verified = True
+        except Exception as exc:  # noqa: BLE001
+            verified = False
+            verify_error = f"{type(exc).__name__}: {exc}"
+
+    saved_path = write_saved_config(
+        {"access_key": access, "secret_key": secret, "base_url": base})
+    result: Dict[str, Any] = {"saved": True, "path": str(saved_path), "verified": verified}
+    if verify_error:
+        result["verifyError"] = verify_error
+    emit(result)
+
+
 async def run(args) -> None:
+    if args.command == "config":
+        await handle_config(args)
+        return
     creds = load_credentials(args)
     async with OnshapeClient(creds) as client:
         docs = DocumentManager(client)
@@ -579,6 +697,21 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--ws")
         if elem:
             sp.add_argument("--elem")
+
+    # Credentials config (no API call needed except optional verify)
+    cfg = sub.add_parser("config", help="save or inspect Onshape API credentials")
+    cfg_sub = cfg.add_subparsers(dest="config_action", required=True)
+    cset = cfg_sub.add_parser("set", help=f"save credentials to {config_path()}")
+    cset.add_argument("--access-key", dest="cfg_access",
+                      help="Onshape access key (prompted if omitted)")
+    cset.add_argument("--secret-key", dest="cfg_secret",
+                      help="Onshape secret key (prompted securely if omitted)")
+    cset.add_argument("--base-url", help=f"API base URL (default {DEFAULT_BASE_URL})")
+    cset.add_argument("--no-verify", action="store_true",
+                      help="skip the API check that confirms the keys work")
+    cfg_sub.add_parser("show", help="show saved credentials (secret redacted)")
+    cfg_sub.add_parser("path", help="print the credentials file path")
+    cfg_sub.add_parser("clear", help="delete the saved credentials file")
 
     def floats(n):
         return lambda s: [float(x) for x in s.split(",")][:n]

@@ -29,14 +29,24 @@ Requires Python ≥ 3.10. Dependencies: `httpx`, `pydantic`, `loguru`.
 
 ## Authenticate
 
-Create an API key pair at https://dev.onshape.com → **API keys**, then:
+Create an API key pair at https://dev.onshape.com → **API keys**, then save it
+once (prompts for the keys; the secret is hidden and the file is written
+`0600` to `~/.onshape/credentials.json`):
+
+```bash
+onshape-cli config set            # prompts for access + secret key, verifies them
+onshape-cli config show           # show what's saved (secret redacted)
+onshape-cli config path           # print the credentials file path
+onshape-cli config clear          # delete the saved credentials
+```
+
+Credentials are resolved in this order: `--access-key`/`--secret-key` flags →
+`ONSHAPE_ACCESS_KEY`/`ONSHAPE_SECRET_KEY` env vars → `~/.onshape/credentials.json`
+→ the `onshape` block of `~/.claude/mcp.json`. So you can also just:
 
 ```bash
 export ONSHAPE_ACCESS_KEY=...   ONSHAPE_SECRET_KEY=...
 ```
-
-(You can also pass `--access-key`/`--secret-key`, or keep them in the `onshape`
-block of `~/.claude/mcp.json`.)
 
 ## Quickstart
 
