@@ -24,7 +24,12 @@ function toMeters(value: number): number {
   return value * INCH_TO_METER;
 }
 
-function circleEntity(id: string, center: [number, number], radius: number): Record<string, unknown> {
+function circleEntity(
+  id: string,
+  center: [number, number],
+  radius: number,
+  isConstruction = false,
+): Record<string, unknown> {
   return {
     btType: "BTMSketchCurve-4",
     entityId: id,
@@ -38,8 +43,24 @@ function circleEntity(id: string, center: [number, number], radius: number): Rec
       yDir: 0,
       clockwise: false,
     },
-    isConstruction: false,
+    isConstruction,
   };
+}
+
+function rectangleEntities(prefix: string, corner1: [number, number], corner2: [number, number]): Array<Record<string, unknown>> {
+  const [x1, y1] = corner1;
+  const [x2, y2] = corner2;
+  const corners: Array<[number, number]> = [
+    [x1, y1],
+    [x2, y1],
+    [x2, y2],
+    [x1, y2],
+  ];
+  const segments: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < 4; i += 1) {
+    segments.push(lineEntity(`${prefix}.${i}`, corners[i], corners[(i + 1) % 4]));
+  }
+  return segments;
 }
 
 function lineEntity(
@@ -281,11 +302,26 @@ export function buildCandyCanePathSketch(input: {
   return sketch(input.name, planeId(input.plane), entities);
 }
 
+function depthQuantity(parameterId: string, value: number, variable?: string): Record<string, unknown> {
+  if (!variable) return pQuantity(parameterId, value, "in");
+  return {
+    btType: "BTMParameterQuantity-147",
+    isInteger: false,
+    value,
+    units: "",
+    expression: `#${variable}`,
+    parameterId,
+    parameterName: "",
+    libraryRelationType: "NONE",
+  };
+}
+
 export function buildExtrude(input: {
   name: string;
   sketchFeatureId: string;
   depth: number;
   operationType: string;
+  depthVariable?: string;
 }): Record<string, unknown> {
   return {
     btType: "BTFeatureDefinitionCall-1406",
@@ -298,12 +334,91 @@ export function buildExtrude(input: {
       parameters: [
         sketchRegion("entities", input.sketchFeatureId),
         pEnum("operationType", "NewBodyOperationType", input.operationType),
-        pQuantity("depth", input.depth, "in"),
+        depthQuantity("depth", input.depth, input.depthVariable),
         pBool("oppositeDirection", false),
         pBool("defaultScope", true),
       ],
     },
   };
+}
+
+/** thicken — mirrors onshape_cli/builders/thicken.py (bare BTMFeature-134). */
+export function buildThicken(input: {
+  name: string;
+  sketchFeatureId: string;
+  thickness: number;
+  operationType: string;
+  thicknessVariable?: string;
+  midplane?: boolean;
+  opposite?: boolean;
+}): Record<string, unknown> {
+  const expression = input.thicknessVariable ? `#${input.thicknessVariable}` : `${input.thickness} in`;
+  return {
+    btType: "BTMFeature-134",
+    name: input.name,
+    suppressed: false,
+    namespace: "",
+    featureType: "thicken",
+    parameters: [
+      { btType: "BTMParameterEnum-145", enumName: "NewBodyOperationType", value: input.operationType, parameterId: "operationType" },
+      sketchRegion("entities", input.sketchFeatureId),
+      { btType: "BTMParameterBoolean-144", value: input.midplane ?? false, parameterId: "midplane" },
+      { btType: "BTMParameterQuantity-147", expression, parameterId: "thickness1" },
+      { btType: "BTMParameterBoolean-144", value: input.opposite ?? false, parameterId: "oppositeDirection" },
+      { btType: "BTMParameterQuantity-147", expression: "0 in", parameterId: "thickness2" },
+    ],
+  };
+}
+
+/** Generic sketch from a parsed entity list (create-sketch). Matches the
+ *  Python contract: types line/circle/rectangle (arc is not supported). */
+export function buildSketchFromEntities(input: {
+  name: string;
+  plane: string;
+  entities: Array<Record<string, unknown>>;
+}): Record<string, unknown> {
+  const out: Array<Record<string, unknown>> = [];
+  input.entities.forEach((entity, index) => {
+    const type = String(entity.type ?? "");
+    const construction = Boolean(entity.construction);
+    if (type === "line") {
+      out.push(lineEntity(`e${index}`, point(entity.start), point(entity.end), construction));
+    } else if (type === "circle") {
+      out.push(circleEntity(`e${index}`, point(entity.center), Number(entity.radius), construction));
+    } else if (type === "rectangle") {
+      out.push(...rectangleEntities(`e${index}`, point(entity.corner1), point(entity.corner2)));
+    } else if (type === "arc") {
+      throw new Error("arc entities not supported by this sketch builder yet; use line/circle/rectangle");
+    } else {
+      throw new Error(`Unknown sketch entity type '${type}'. Use line, circle, or rectangle.`);
+    }
+  });
+  return sketch(input.name, planeId(input.plane), out);
+}
+
+export function buildRectangleSketch(input: {
+  name: string;
+  plane: string;
+  corner1: [number, number];
+  corner2: [number, number];
+}): Record<string, unknown> {
+  return sketch(input.name, planeId(input.plane), rectangleEntities("rect", input.corner1, input.corner2));
+}
+
+export function buildLineSketch(input: {
+  name: string;
+  plane: string;
+  start: [number, number];
+  end: [number, number];
+}): Record<string, unknown> {
+  return sketch(input.name, planeId(input.plane), [lineEntity("line.1", input.start, input.end)]);
+}
+
+function point(value: unknown): [number, number] {
+  if (Array.isArray(value) && value.length === 2 && value.every((v) => Number.isFinite(Number(v)))) {
+    return [Number(value[0]), Number(value[1])];
+  }
+  throw new Error(`Expected a [x, y] point; got ${JSON.stringify(value)}`);
 }
 
 export function buildRevolve(input: {

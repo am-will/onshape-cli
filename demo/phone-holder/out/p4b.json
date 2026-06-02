@@ -1,0 +1,142 @@
+{
+  "ok": true,
+  "result": {
+    "featureId": "FSb84dRhCYCAwmd_1",
+    "response": {
+      "btType": "BTFeatureDefinitionResponse-1617",
+      "rejectMicroversionSkew": false,
+      "microversionSkew": false,
+      "featureState": {
+        "btType": "BTFeatureState-1688",
+        "featureStatus": "OK",
+        "inactive": false
+      },
+      "feature": {
+        "btType": "BTMFeature-134",
+        "namespace": "",
+        "name": "Cable port",
+        "suppressed": false,
+        "parameters": [
+          {
+            "btType": "BTMParameterQueryList-148",
+            "queries": [
+              {
+                "btType": "BTMIndividualSketchRegionQuery-140",
+                "queryStatement": null,
+                "filterInnerLoops": true,
+                "queryString": "query = qSketchRegion(id + \"FHA2SRbFUmcfOKc_1\", true);",
+                "featureId": "FHA2SRbFUmcfOKc_1",
+                "nodeId": "MdM3PyaNwXECwFOZb",
+                "deterministicIds": [
+                  "JJC"
+                ]
+              }
+            ],
+            "filter": {
+              "btType": "BTAndFilter-110",
+              "operand1": {
+                "btType": "BTOrFilter-167",
+                "operand1": {
+                  "btType": "BTAndFilter-110",
+                  "operand1": {
+                    "btType": "BTAndFilter-110",
+                    "operand1": {
+                      "btType": "BTFlatSheetMetalFilter-3018",
+                      "allows": "MODEL_AND_FLATTENED"
+                    },
+                    "operand2": {
+                      "btType": "BTSketchObjectFilter-184",
+                      "isSketchObject": true,
+                      "objectType": "ANY_SKETCH_OBJECT"
+                    }
+                  },
+                  "operand2": {
+                    "btType": "BTEntityTypeFilter-124",
+                    "entityType": "FACE"
+                  }
+                },
+                "operand2": {
+                  "btType": "BTAndFilter-110",
+                  "operand1": {
+                    "btType": "BTAndFilter-110",
+                    "operand1": {
+                      "btType": "BTGeometryFilter-130",
+                      "geometryType": "PLANE"
+                    },
+                    "operand2": {
+                      "btType": "BTFlatSheetMetalFilter-3018",
+                      "allows": "MODEL_ONLY"
+                    }
+                  },
+                  "operand2": {
+                    "btType": "BTEntityTypeFilter-124",
+                    "entityType": "FACE"
+                  }
+                }
+              },
+              "operand2": {
+                "btType": "BTConstructionObjectFilter-113",
+                "isConstruction": false
+              }
+            },
+            "nodeId": "MWRfOW7P/RouFEpDM",
+            "parameterId": "entities",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          },
+          {
+            "btType": "BTMParameterEnum-145",
+            "namespace": "",
+            "nodeId": "MfeNEwtHiFqPBQ1iR",
+            "enumName": "NewBodyOperationType",
+            "value": "REMOVE",
+            "parameterId": "operationType",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          },
+          {
+            "btType": "BTMParameterQuantity-147",
+            "isInteger": false,
+            "value": 0,
+            "units": "",
+            "expression": "1.7 in",
+            "nodeId": "M0sq8E5waW+zAe/34",
+            "parameterId": "depth",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          },
+          {
+            "btType": "BTMParameterBoolean-144",
+            "value": true,
+            "nodeId": "M8hkJKsjPQjwbN13b",
+            "parameterId": "oppositeDirection",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          },
+          {
+            "btType": "BTMParameterBoolean-144",
+            "value": true,
+            "nodeId": "MPDrdQAWC32EB8Wf3",
+            "parameterId": "defaultScope",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          }
+        ],
+        "featureId": "FSb84dRhCYCAwmd_1",
+        "nodeId": "M5CN0yBdJFJMGP0f0",
+        "featureType": "extrude",
+        "returnAfterSubfeatures": false,
+        "subFeatures": [],
+        "suppressionState": null,
+        "parameterLibraries": []
+      },
+      "serializationVersion": "1.2.19",
+      "sourceMicroversion": "255966906a53012efc3c60bb",
+      "libraryVersion": 0
+    },
+    "validation": {
+      "featureId": "FSb84dRhCYCAwmd_1",
+      "featureStatus": "OK"
+    }
+  }
+}

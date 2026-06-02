@@ -7,17 +7,44 @@ import { DocumentManager } from "./api/documents";
 import { EdgeQuery } from "./api/edges";
 import { FeatureStudioManager, loadText } from "./api/featurestudio";
 import { loadJson, PartStudioManager } from "./api/partstudio";
+import { ExportManager } from "./api/export";
+import { VariableManager } from "./api/variables";
+import { ConfigurationManager } from "./api/configurations";
+import { AssemblyManager } from "./api/assemblies";
+import { DrawingManager } from "./api/drawings";
+import { MetadataManager } from "./api/metadata";
+import { decodeFsValue, featurescriptMessages } from "./api/fsvalue";
 import {
   buildBooleanUnion,
   buildCandyCanePathSketch,
   buildCircleAxisSketch,
   buildCircleSketch,
   buildExtrude,
-  buildOffsetPlane,
+  buildLineSketch,
+  buildRectangleSketch,
   buildRevolve,
+  buildSketchFromEntities,
   buildSweep,
+  buildThicken,
   parsePoint2,
+  planeId,
 } from "./builders/modeling";
+import {
+  buildAssemblyGroup,
+  buildAssemblyMate,
+  buildAssemblyMateConnector,
+  buildBoolean,
+  buildChamfer,
+  buildCircularPattern,
+  buildDraft,
+  buildFillet,
+  buildLinearPattern,
+  buildMirror,
+  buildOffsetPlaneSelect,
+  buildRevolveAxis,
+  buildShell,
+  type Selection,
+} from "./builders/advanced";
 import { CliError, emit, emitError } from "./output";
 
 type Options = Record<string, string | boolean>;
@@ -108,6 +135,47 @@ async function run(argv: string[]): Promise<void> {
     case "find-circular-edges":
     case "find-edges-by-feature":
     case "mass-properties":
+    case "create-sketch":
+    case "sketch-rectangle":
+    case "sketch-line":
+    case "hole":
+    case "thicken":
+    case "fillet":
+    case "chamfer":
+    case "shell":
+    case "draft":
+    case "boolean":
+    case "mirror":
+    case "linear-pattern":
+    case "circular-pattern":
+    case "measure":
+    case "eval-featurescript":
+    case "get-variables":
+    case "set-variable":
+    case "get-configuration":
+    case "encode-configuration":
+    case "export-stl":
+    case "export":
+    case "thumbnail-info":
+    case "get-thumbnail":
+    case "shaded-view":
+    case "get-assembly":
+    case "create-assembly":
+    case "insert-instance":
+    case "get-assembly-features":
+    case "assembly-add-feature":
+    case "assembly-mate-connector":
+    case "assembly-mate":
+    case "assembly-group":
+    case "get-bom":
+    case "assembly-mass-properties":
+    case "delete-instance":
+    case "transform-instance":
+    case "create-drawing":
+    case "get-drawing-views":
+    case "export-drawing":
+    case "get-metadata":
+    case "set-metadata":
       await handleReadCommand(parsed);
       return;
     default:
@@ -238,6 +306,12 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
   const partstudios = new PartStudioManager(client);
   const featurestudios = new FeatureStudioManager(client);
   const edges = new EdgeQuery(client);
+  const exports = new ExportManager(client);
+  const variables = new VariableManager(client);
+  const configurations = new ConfigurationManager(client);
+  const assemblies = new AssemblyManager(client);
+  const drawings = new DrawingManager(client);
+  const metadata = new MetadataManager(client);
 
   switch (parsed.command) {
     case "list-documents": {
@@ -478,21 +552,25 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
     }
     case "revolve": {
       const { doc, ws, elem } = dwe(parsed.options);
-      emit(
-        await addFeatureResult(
-          partstudios,
-          doc,
-          ws,
-          elem,
-          buildRevolve({
-            name: stringOption(parsed.options, "name") ?? "Revolve",
-            sketchFeatureId: requiredOption(parsed.options, "sketch"),
-            angle: numberOption(parsed.options, "angle", 360),
-            operationType: stringOption(parsed.options, "op") ?? "NEW",
-          }),
-          !parsed.options.noValidate,
-        ),
-      );
+      const axisIds = splitList(stringOption(parsed.options, "axisIds"));
+      const axisQuery = stringOption(parsed.options, "axis");
+      const name = stringOption(parsed.options, "name") ?? "Revolve";
+      const sketchFeatureId = requiredOption(parsed.options, "sketch");
+      const angle = numberOption(parsed.options, "angle", 360);
+      const operationType = stringOption(parsed.options, "op") ?? "NEW";
+      const feature =
+        axisIds.length || axisQuery
+          ? buildRevolveAxis({
+              name,
+              sketchFeatureId,
+              axisIds: axisIds.length ? axisIds : undefined,
+              axisQuery,
+              operationType,
+              revolveType: stringOption(parsed.options, "type") ?? "FULL",
+              angle,
+            })
+          : buildRevolve({ name, sketchFeatureId, angle, operationType });
+      emit(await addFeatureResult(partstudios, doc, ws, elem, feature, !parsed.options.noValidate));
       return;
     }
     case "sweep": {
@@ -516,16 +594,20 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
     }
     case "offset-plane": {
       const { doc, ws, elem } = dwe(parsed.options);
+      const baseIds = splitList(stringOption(parsed.options, "baseIds"));
+      const basePlane = stringOption(parsed.options, "basePlane");
+      const basePlaneIds = baseIds.length ? baseIds : basePlane ? [planeId(basePlane)] : undefined;
       emit(
         await addFeatureResult(
           partstudios,
           doc,
           ws,
           elem,
-          buildOffsetPlane({
+          buildOffsetPlaneSelect({
             name: stringOption(parsed.options, "name") ?? "Offset plane",
-            basePlane: stringOption(parsed.options, "basePlane") ?? "Top",
-            offset: requiredNumberOption(parsed.options, "offset"),
+            basePlaneIds,
+            basePlaneQuery: stringOption(parsed.options, "baseQuery"),
+            offset: numberOption(parsed.options, "offset", 1.0),
           }),
           !parsed.options.noValidate,
         ),
@@ -576,7 +658,585 @@ async function handleReadCommand(parsed: ParsedArgs): Promise<void> {
       );
       return;
     }
+
+    // ---- sketching ----
+    case "create-sketch": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      let entities: Array<Record<string, unknown>>;
+      try {
+        const parsedEntities = JSON.parse(requiredOption(parsed.options, "entities"));
+        if (!Array.isArray(parsedEntities)) throw new Error("--entities must be a JSON array");
+        entities = parsedEntities;
+      } catch (error) {
+        throw new CliError(error instanceof Error ? error.message : String(error), null, 2);
+      }
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildSketchFromEntities({
+            name: stringOption(parsed.options, "name") ?? "Sketch",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            entities,
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "sketch-rectangle": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildRectangleSketch({
+            name: stringOption(parsed.options, "name") ?? "Sketch",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            corner1: parsePointOption(parsed.options, "corner1"),
+            corner2: parsePointOption(parsed.options, "corner2"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "sketch-line": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildLineSketch({
+            name: stringOption(parsed.options, "name") ?? "Sketch",
+            plane: stringOption(parsed.options, "plane") ?? "Front",
+            start: parsePointOption(parsed.options, "start"),
+            end: parsePointOption(parsed.options, "end"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+
+    // ---- solids / modifiers ----
+    case "hole": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildExtrude({
+            name: stringOption(parsed.options, "name") ?? "Hole",
+            sketchFeatureId: requiredOption(parsed.options, "sketch"),
+            depth: requiredNumberOption(parsed.options, "depth"),
+            operationType: "REMOVE",
+            depthVariable: stringOption(parsed.options, "depthVar"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "thicken": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildThicken({
+            name: stringOption(parsed.options, "name") ?? "Thicken",
+            sketchFeatureId: requiredOption(parsed.options, "sketch"),
+            thickness: requiredNumberOption(parsed.options, "thickness"),
+            operationType: stringOption(parsed.options, "op") ?? "NEW",
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "fillet": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildFillet({
+            name: stringOption(parsed.options, "name") ?? "Fillet",
+            radius: numberOption(parsed.options, "radius", 0.06),
+            filletType: stringOption(parsed.options, "type") ?? "EDGE",
+            ...selection(parsed.options),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "chamfer": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildChamfer({
+            name: stringOption(parsed.options, "name") ?? "Chamfer",
+            width: numberOption(parsed.options, "width", 0.08),
+            chamferType: stringOption(parsed.options, "type") ?? "EQUAL_OFFSETS",
+            angle: optionalNumberOption(parsed.options, "angle"),
+            ...selection(parsed.options),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "shell": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildShell({
+            name: stringOption(parsed.options, "name") ?? "Shell",
+            thickness: numberOption(parsed.options, "thickness", 0.125),
+            faceIds: splitList(stringOption(parsed.options, "faces")),
+            queryString: stringOption(parsed.options, "query"),
+            inward: !parsed.options.outward,
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "draft": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildDraft({
+            name: stringOption(parsed.options, "name") ?? "Draft",
+            angle: numberOption(parsed.options, "angle", 3.0),
+            neutralPlaneQuery: requiredOption(parsed.options, "neutral"),
+            faceQuery: requiredOption(parsed.options, "faces"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+
+    // ---- patterns / boolean ----
+    case "boolean": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildBoolean({
+            name: stringOption(parsed.options, "name") ?? "Boolean",
+            operationType: stringOption(parsed.options, "op") ?? "UNION",
+            toolIds: splitList(stringOption(parsed.options, "toolIds")),
+            toolsQuery: stringOption(parsed.options, "tools"),
+            targetsQuery: stringOption(parsed.options, "targets"),
+            keepTools: Boolean(parsed.options.keepTools),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "mirror": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildMirror({
+            name: stringOption(parsed.options, "name") ?? "Mirror",
+            patternType: stringOption(parsed.options, "type") ?? "PART",
+            entitiesQuery: requiredOption(parsed.options, "entities"),
+            mirrorPlaneIds: splitList(stringOption(parsed.options, "planeIds")),
+            mirrorPlaneQuery: stringOption(parsed.options, "planeQuery"),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "linear-pattern": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildLinearPattern({
+            name: stringOption(parsed.options, "name") ?? "Linear Pattern",
+            patternType: stringOption(parsed.options, "type") ?? "PART",
+            entitiesQuery: requiredOption(parsed.options, "entities"),
+            directionIds: splitList(stringOption(parsed.options, "directionIds")),
+            directionQuery: stringOption(parsed.options, "direction"),
+            distance: requiredNumberOption(parsed.options, "distance"),
+            instanceCount: requiredNumberOption(parsed.options, "count"),
+            opposite: Boolean(parsed.options.opposite),
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+    case "circular-pattern": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addFeatureResult(
+          partstudios,
+          doc,
+          ws,
+          elem,
+          buildCircularPattern({
+            name: stringOption(parsed.options, "name") ?? "Circular Pattern",
+            patternType: stringOption(parsed.options, "type") ?? "PART",
+            entitiesQuery: requiredOption(parsed.options, "entities"),
+            axisIds: splitList(stringOption(parsed.options, "axisIds")),
+            axisQuery: stringOption(parsed.options, "axis"),
+            instanceCount: requiredNumberOption(parsed.options, "count"),
+            angle: numberOption(parsed.options, "angle", 360.0),
+            equalSpacing: !parsed.options.noEqualSpacing,
+          }),
+          !parsed.options.noValidate,
+        ),
+      );
+      return;
+    }
+
+    // ---- query / measure ----
+    case "measure": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await partstudios.measure(doc, ws, elem));
+      return;
+    }
+    case "eval-featurescript": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const scriptFile = stringOption(parsed.options, "scriptFile");
+      const script = scriptFile ? loadText(undefined, scriptFile) : stringOption(parsed.options, "script") ?? "";
+      const resp = (await partstudios.evaluateFeatureScript(doc, ws, elem, script)) as Record<string, unknown>;
+      if (parsed.options.raw) {
+        emit(resp);
+        return;
+      }
+      const messages = featurescriptMessages(resp);
+      if (!isRecord(resp) || resp.result === null || resp.result === undefined) {
+        throw new CliError(String(messages[0]?.message ?? "FeatureScript evaluation failed"), messages, 1);
+      }
+      const out: Record<string, unknown> = { value: decodeFsValue(resp.result) };
+      if (resp.console) out.console = resp.console;
+      if (messages.length) out.warnings = messages;
+      emit(out);
+      return;
+    }
+
+    // ---- variables ----
+    case "get-variables": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await variables.getVariables(doc, ws, elem));
+      return;
+    }
+    case "set-variable": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await variables.setVariable(
+          doc,
+          ws,
+          elem,
+          requiredOption(parsed.options, "name"),
+          requiredOption(parsed.options, "expression"),
+          stringOption(parsed.options, "description"),
+        ),
+      );
+      return;
+    }
+
+    // ---- configurations ----
+    case "get-configuration": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await configurations.getConfiguration(doc, ws, elem));
+      return;
+    }
+    case "encode-configuration": {
+      const { doc, elem } = dwe(parsed.options);
+      const params = loadJsonArray(parsed.options, "params", "paramsFile");
+      emit(await configurations.encodeConfiguration(doc, elem, params as Array<Record<string, string>>));
+      return;
+    }
+
+    // ---- export / images ----
+    case "export-stl": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const out = requiredOption(parsed.options, "out");
+      const written = await exports.exportStl(doc, ws, elem, out, {
+        binary: !parsed.options.ascii,
+        resolution: stringOption(parsed.options, "resolution") ?? "medium",
+        configuration: stringOption(parsed.options, "configuration"),
+      });
+      emit({ written });
+      return;
+    }
+    case "export": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const out = requiredOption(parsed.options, "out");
+      const format = stringOption(parsed.options, "format") ?? "STEP";
+      const written = await exports.exportTranslation(doc, ws, elem, out, {
+        formatName: format,
+        elementKind: stringOption(parsed.options, "kind") ?? "partstudios",
+        configuration: stringOption(parsed.options, "configuration"),
+      });
+      emit({ written, format });
+      return;
+    }
+    case "thumbnail-info": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await exports.thumbnailInfo(doc, ws, elem));
+      return;
+    }
+    case "get-thumbnail": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const out = requiredOption(parsed.options, "out");
+      const size = stringOption(parsed.options, "size") ?? "600x340";
+      const written = await exports.getThumbnail(doc, ws, elem, out, { size });
+      emit({ written, size });
+      return;
+    }
+    case "shaded-view": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const out = requiredOption(parsed.options, "out");
+      const written = await exports.shadedView(doc, ws, elem, out, {
+        elementKind: stringOption(parsed.options, "kind") ?? "partstudios",
+        width: numberOption(parsed.options, "width", 600),
+        height: numberOption(parsed.options, "height", 340),
+        viewMatrix: stringOption(parsed.options, "viewMatrix"),
+        showEdges: !parsed.options.noEdges,
+        configuration: stringOption(parsed.options, "configuration"),
+      });
+      emit({ written });
+      return;
+    }
+
+    // ---- assemblies ----
+    case "get-assembly": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await docs.getAssembly(doc, ws, elem));
+      return;
+    }
+    case "create-assembly": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(await assemblies.createAssembly(doc, ws, requiredOption(parsed.options, "name")));
+      return;
+    }
+    case "insert-instance": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await assemblies.insertInstance(doc, ws, elem, {
+          sourceDocumentId: stringOption(parsed.options, "srcDoc") ?? doc,
+          sourceElementId: requiredOption(parsed.options, "srcElem"),
+          partId: stringOption(parsed.options, "part"),
+          sourceVersionId: stringOption(parsed.options, "srcVersion"),
+          isAssembly: Boolean(parsed.options.isAssembly),
+          isWholePartStudio: Boolean(parsed.options.wholeStudio),
+          configuration: stringOption(parsed.options, "configuration"),
+        }),
+      );
+      return;
+    }
+    case "get-assembly-features": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await assemblies.getFeatures(doc, ws, elem));
+      return;
+    }
+    case "assembly-add-feature": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await addAssemblyFeature(assemblies, doc, ws, elem, requiredJson(parsed.options)));
+      return;
+    }
+    case "assembly-mate-connector": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addAssemblyFeature(
+          assemblies,
+          doc,
+          ws,
+          elem,
+          buildAssemblyMateConnector({
+            name: stringOption(parsed.options, "name") ?? "Mate connector",
+            occurrenceId: requiredOption(parsed.options, "occurrence"),
+            inferenceType: stringOption(parsed.options, "inference") ?? "CENTROID",
+          }),
+        ),
+      );
+      return;
+    }
+    case "assembly-mate": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addAssemblyFeature(
+          assemblies,
+          doc,
+          ws,
+          elem,
+          buildAssemblyMate({
+            name: stringOption(parsed.options, "name") ?? "Mate",
+            mateType: stringOption(parsed.options, "type") ?? "FASTENED",
+            mateConnectorIds: splitList(requiredOption(parsed.options, "connectors")),
+          }),
+        ),
+      );
+      return;
+    }
+    case "assembly-group": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(
+        await addAssemblyFeature(
+          assemblies,
+          doc,
+          ws,
+          elem,
+          buildAssemblyGroup({
+            name: stringOption(parsed.options, "name") ?? "Group",
+            occurrenceIds: splitList(requiredOption(parsed.options, "occurrences")),
+          }),
+        ),
+      );
+      return;
+    }
+    case "get-bom": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await assemblies.getBom(doc, ws, elem, { multiLevel: Boolean(parsed.options.multiLevel) }));
+      return;
+    }
+    case "assembly-mass-properties": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await assemblies.massProperties(doc, ws, elem));
+      return;
+    }
+    case "delete-instance": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await assemblies.deleteInstance(doc, ws, elem, requiredOption(parsed.options, "node")));
+      return;
+    }
+    case "transform-instance": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const paths = loadJsonArray(parsed.options, "paths", "pathsFile") as string[][];
+      const transform = loadJsonArray(parsed.options, "transform", "transformFile") as number[];
+      emit(await assemblies.transformOccurrences(doc, ws, elem, paths, transform, { isRelative: !parsed.options.absolute }));
+      return;
+    }
+
+    // ---- drawings ----
+    case "create-drawing": {
+      const { doc, ws } = docWorkspace(parsed.options);
+      emit(
+        await drawings.createDrawing(doc, ws, {
+          name: requiredOption(parsed.options, "name"),
+          sourceElementId: requiredOption(parsed.options, "srcElem"),
+          sourceVersionId: requiredOption(parsed.options, "srcVersion"),
+          sourceDocumentId: stringOption(parsed.options, "srcDoc"),
+          partId: stringOption(parsed.options, "part"),
+        }),
+      );
+      return;
+    }
+    case "get-drawing-views": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      emit(await drawings.getViews(doc, ws, elem));
+      return;
+    }
+    case "export-drawing": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const out = requiredOption(parsed.options, "out");
+      const format = stringOption(parsed.options, "format") ?? "PDF";
+      const written = await exports.exportTranslation(doc, ws, elem, out, { formatName: format, elementKind: "drawings" });
+      emit({ written, format });
+      return;
+    }
+
+    // ---- metadata ----
+    case "get-metadata": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const part = stringOption(parsed.options, "part");
+      emit(part ? await metadata.getPartMetadata(doc, ws, elem, part) : await metadata.getElementMetadata(doc, ws, elem));
+      return;
+    }
+    case "set-metadata": {
+      const { doc, ws, elem } = dwe(parsed.options);
+      const properties = loadJsonArray(parsed.options, "properties", "propertiesFile") as Array<Record<string, unknown>>;
+      emit(await metadata.setElementMetadata(doc, ws, elem, properties, stringOption(parsed.options, "part")));
+      return;
+    }
   }
+}
+
+function selection(options: Options): Selection {
+  return {
+    edgeIds: splitList(stringOption(options, "edges")),
+    queryString: stringOption(options, "query"),
+    featureId: stringOption(options, "feature"),
+    selectAll: Boolean(options.all),
+    circular: Boolean(options.circular),
+  };
+}
+
+function splitList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function loadJsonArray(options: Options, inlineKey: string, fileKey: string): unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = loadJson(stringOption(options, inlineKey), stringOption(options, fileKey));
+  } catch (error) {
+    throw new CliError(error instanceof Error ? error.message : String(error), null, 2);
+  }
+  if (!Array.isArray(parsed)) throw new CliError(`--${inlineKey} must be a JSON array`, null, 2);
+  return parsed;
+}
+
+async function addAssemblyFeature(
+  assemblies: AssemblyManager,
+  doc: string,
+  ws: string,
+  elem: string,
+  feature: unknown,
+): Promise<unknown> {
+  const response = await assemblies.addFeature(doc, ws, elem, feature);
+  const featureId = isRecord(response) && isRecord(response.feature) ? response.feature.featureId ?? null : null;
+  return { featureId, response };
 }
 
 async function addFeatureResult(
@@ -687,54 +1347,59 @@ function storeMode(options: Options): StoreMode {
 }
 
 function printHelp(): void {
-  console.log(`onshape
+  console.log(`onshape — command-line automation for Onshape CAD
 
 Usage:
   onshape <command> [options]
 
-Commands:
-  login
-  logout
-  config set|show|path|clear
-  list-documents
-  search-documents
-  get-document
-  get-document-summary
-  create-document
-  delete-document
-  update-document
-  get-elements
-  find-part-studios
-  get-workspaces
-  list-versions
-  create-version
-  get-parts
-  get-features
-  get-feature-specs
-  get-sketch-info
-  get-body-details
-  create-part-studio
-  delete-feature
-  delete-element
-  create-feature-studio
-  get-feature-studio
-  set-feature-studio
-  get-feature-studio-specs
-  add-feature
-  update-feature
-  rollback
-  sketch-circle
-  sketch-circle-axis
-  sketch-candy-cane-path
-  extrude
-  revolve
-  sweep
-  offset-plane
-  boolean-union
-  validate-partstudio
-  get-edges
-  find-circular-edges
-  find-edges-by-feature
-  mass-properties
+Credentials:
+  login  logout  config set|show|path|clear
+
+Documents & discovery:
+  list-documents  search-documents  get-document  get-document-summary
+  create-document  delete-document  update-document  get-elements
+  find-part-studios  get-workspaces  list-versions  create-version
+  get-parts  get-features  get-feature-specs  get-sketch-info
+  get-body-details  get-assembly
+
+Part studio management:
+  create-part-studio  delete-feature  delete-element
+  add-feature  update-feature  rollback  validate-partstudio
+
+Sketching:
+  create-sketch  sketch-rectangle  sketch-circle  sketch-line
+  sketch-circle-axis  sketch-candy-cane-path
+
+Solids & modifiers:
+  extrude  hole  thicken  revolve  sweep  draft  fillet  chamfer  shell
+
+Patterns & boolean:
+  boolean  boolean-union  mirror  linear-pattern  circular-pattern  offset-plane
+
+Geometry / measure:
+  get-edges  find-circular-edges  find-edges-by-feature  measure
+  eval-featurescript  mass-properties
+
+Variables & configurations:
+  get-variables  set-variable  get-configuration  encode-configuration
+
+Export & images:
+  export-stl  export  thumbnail-info  get-thumbnail  shaded-view
+
+Assemblies:
+  create-assembly  insert-instance  get-assembly-features  assembly-add-feature
+  assembly-mate-connector  assembly-mate  assembly-group  get-bom
+  assembly-mass-properties  delete-instance  transform-instance
+
+Drawings:
+  create-drawing  get-drawing-views  export-drawing
+
+Feature studios:
+  create-feature-studio  get-feature-studio  set-feature-studio  get-feature-studio-specs
+
+Metadata:
+  get-metadata  set-metadata
+
+Every command prints {"ok": true, "result": ...} or {"ok": false, "error": ..., "detail": ...}.
 `);
 }
