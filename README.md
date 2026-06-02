@@ -1,8 +1,9 @@
 # onshape-cli
 
-Command-line CAD automation for [Onshape](https://www.onshape.com). Build,
-inspect, render, validate, and export parametric models from a terminal, script,
-or coding agent.
+Command-line CAD control for [Onshape](https://www.onshape.com), designed to be
+driven by AI coding agents that build 3D models. It is not an autonomous CAD
+agent on its own; it is the tool layer an agent uses to create, inspect, render,
+validate, and export parametric models.
 
 This repository contains two CLIs with the same command names, flags, credential
 store, and JSON contract:
@@ -20,6 +21,8 @@ machine-readable JSON:
 
 ## What It Can Do
 
+- Give AI agents a predictable JSON interface for operating Onshape instead of
+  clicking through the browser UI.
 - Discover documents, workspaces, elements, part studios, assemblies, drawings,
   versions, variables, metadata, and feature definitions.
 - Create sketches, extrudes, holes, thickens, sweeps, revolves, drafts, fillets,
@@ -353,10 +356,10 @@ The Python CLI is the original implementation. The Node CLI has been ported to
 command parity for the documented command surface and is published as `onshape`
 on npm. Both CLIs share credentials and the standard JSON envelope.
 
-The project is beta-quality CAD automation: commands have been live-tested
-against real Onshape documents, but CAD feature regeneration can still reject
-valid-looking payloads. Treat `featureStatus`, `measure`, and rendered previews
-as part of the normal workflow.
+The project is a beta-quality CAD command layer for agent-driven modeling:
+commands have been live-tested against real Onshape documents, but CAD feature
+regeneration can still reject valid-looking payloads. Treat `featureStatus`,
+`measure`, and rendered previews as part of the normal workflow.
 
 ## License
 
