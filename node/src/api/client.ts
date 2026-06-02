@@ -6,6 +6,9 @@ import type { Credentials } from "../credentials";
 const READ_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_READ_ATTEMPTS = 8;
 const MAX_RETRY_DELAY_MS = 30_000;
+// Per-request wall-clock timeout. Without this a stalled/throttled connection
+// hangs forever (Node fetch has no default timeout). Override with ONSHAPE_TIMEOUT_MS.
+const REQUEST_TIMEOUT_MS = Number(process.env.ONSHAPE_TIMEOUT_MS) || 120_000;
 
 export class HttpError extends Error {
   readonly status: number;
@@ -115,15 +118,17 @@ export class OnshapeClient {
   ): Promise<Response> {
     const auth = Buffer.from(`${this.creds.accessKey}:${this.creds.secretKey}`).toString("base64");
     const requestHeaders = { ...headers, Authorization: `Basic ${auth}` };
+    const fetchOnce = (target: URL): Promise<Response> =>
+      fetch(target, { method, body, headers: requestHeaders, redirect: "manual", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     let current = url;
     for (let hop = 0; hop < 5; hop += 1) {
-      const response = await fetch(current, { method, body, headers: requestHeaders, redirect: "manual" });
+      const response = await fetchOnce(current);
       if (![301, 302, 303, 307, 308].includes(response.status)) return response;
       const location = response.headers.get("location");
       if (!location) return response;
       current = new URL(location, current);
     }
-    return fetch(current, { method, body, headers: requestHeaders, redirect: "manual" });
+    return fetchOnce(current);
   }
 }
 
