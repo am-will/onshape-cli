@@ -1,0 +1,89 @@
+{
+  "feature": {
+    "btType": "BTMSketch-151",
+    "featureType": "newSketch",
+    "name": "Cable port profile",
+    "suppressed": false,
+    "parameters": [
+      {
+        "btType": "BTMParameterQueryList-148",
+        "queries": [
+          {
+            "btType": "BTMIndividualQuery-138",
+            "deterministicIds": [
+              "JCC"
+            ]
+          }
+        ],
+        "parameterId": "sketchPlane"
+      }
+    ],
+    "entities": [
+      {
+        "btType": "BTMSketchCurveSegment-155",
+        "entityId": "port.0",
+        "startPointId": "port.0.start",
+        "endPointId": "port.0.end",
+        "startParam": 0,
+        "endParam": 0.016510000000000004,
+        "geometry": {
+          "btType": "BTCurveGeometryLine-117",
+          "pntX": 0.033655,
+          "pntY": -0.00254,
+          "dirX": 1,
+          "dirY": 0
+        },
+        "isConstruction": false
+      },
+      {
+        "btType": "BTMSketchCurveSegment-155",
+        "entityId": "port.1",
+        "startPointId": "port.1.start",
+        "endPointId": "port.1.end",
+        "startParam": 0,
+        "endParam": 0.018288,
+        "geometry": {
+          "btType": "BTCurveGeometryLine-117",
+          "pntX": 0.050165,
+          "pntY": -0.00254,
+          "dirX": 0,
+          "dirY": 1
+        },
+        "isConstruction": false
+      },
+      {
+        "btType": "BTMSketchCurveSegment-155",
+        "entityId": "port.2",
+        "startPointId": "port.2.start",
+        "endPointId": "port.2.end",
+        "startParam": 0,
+        "endParam": 0.016510000000000004,
+        "geometry": {
+          "btType": "BTCurveGeometryLine-117",
+          "pntX": 0.050165,
+          "pntY": 0.015747999999999998,
+          "dirX": -1,
+          "dirY": 0
+        },
+        "isConstruction": false
+      },
+      {
+        "btType": "BTMSketchCurveSegment-155",
+        "entityId": "port.3",
+        "startPointId": "port.3.start",
+        "endPointId": "port.3.end",
+        "startParam": 0,
+        "endParam": 0.018288,
+        "geometry": {
+          "btType": "BTCurveGeometryLine-117",
+          "pntX": 0.033655,
+          "pntY": 0.015747999999999998,
+          "dirX": 0,
+          "dirY": -1
+        },
+        "isConstruction": false
+      }
+    ],
+    "constraints": []
+  }
+}

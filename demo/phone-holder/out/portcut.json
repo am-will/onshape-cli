@@ -1,0 +1,61 @@
+{
+  "btType": "BTFeatureDefinitionCall-1406",
+  "feature": {
+    "btType": "BTMFeature-134",
+    "featureType": "extrude",
+    "name": "Cable port",
+    "suppressed": false,
+    "namespace": "",
+    "parameters": [
+      {
+        "btType": "BTMParameterQueryList-148",
+        "queries": [
+          {
+            "btType": "BTMIndividualSketchRegionQuery-140",
+            "queryStatement": null,
+            "filterInnerLoops": true,
+            "queryString": "query = qSketchRegion(id + \"FHA2SRbFUmcfOKc_1\", true);",
+            "featureId": "FHA2SRbFUmcfOKc_1",
+            "deterministicIds": []
+          }
+        ],
+        "parameterId": "entities",
+        "parameterName": "",
+        "libraryRelationType": "NONE"
+      },
+      {
+        "btType": "BTMParameterEnum-145",
+        "namespace": "",
+        "enumName": "NewBodyOperationType",
+        "value": "REMOVE",
+        "parameterId": "operationType",
+        "parameterName": "",
+        "libraryRelationType": "NONE"
+      },
+      {
+        "btType": "BTMParameterQuantity-147",
+        "isInteger": false,
+        "value": 1.7,
+        "units": "",
+        "expression": "1.7 in",
+        "parameterId": "depth",
+        "parameterName": "",
+        "libraryRelationType": "NONE"
+      },
+      {
+        "btType": "BTMParameterBoolean-144",
+        "value": true,
+        "parameterId": "oppositeDirection",
+        "parameterName": "",
+        "libraryRelationType": "NONE"
+      },
+      {
+        "btType": "BTMParameterBoolean-144",
+        "value": true,
+        "parameterId": "defaultScope",
+        "parameterName": "",
+        "libraryRelationType": "NONE"
+      }
+    ]
+  }
+}

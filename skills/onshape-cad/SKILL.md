@@ -1,229 +1,199 @@
 ---
 name: onshape-cad
-description: Drive Onshape CAD from the command line via the onshape-cli tool — inspect documents and part studios; build sketches, extrudes, holes, revolves; apply fillets, chamfers, shells; do booleans, mirrors, and linear/circular patterns; query edges; read mass properties; and export STL/STEP/3MF. Use whenever the user wants to build, modify, inspect, or export parametric CAD in Onshape, mentions Onshape or a cad.onshape.com URL, asks for fillets/chamfers/extrudes on a part, or wants to generate a model for 3D printing.
+description: Use when a task mentions Onshape, CAD, cad.onshape.com URLs, parametric parts, 3D printing, or model inspection/export.
 ---
 
 # Onshape CAD CLI
 
-`onshape-cli` is a self-contained command-line tool that talks to the Onshape
-REST API. This skill teaches any coding agent how to use it.
+Use this skill to drive Onshape through the repo's CLI. The Python command is
+`onshape-cli`; the Node/npm command is `onshape`. They share command names,
+flags, and JSON output.
 
----
+## Run Model
 
-## 1. How to run it  ⚠️ READ THIS
+- Installed Python CLI: `onshape-cli <command> ...`
+- From this repo without install: `python -m onshape_cli.cli <command> ...`
+- Node package: `onshape <command> ...` or `npx onshape <command> ...`
+- Every shell call is fresh. Do not rely on aliases, shell functions, or prior
+  `export`s unless they are set in the same command.
+- Every command prints JSON:
+  - success: `{"ok": true, "result": ...}`
+  - failure: `{"ok": false, "error": ..., "detail": ...}`
+- Capture feature/document ids from `.result` with `jq`; read `.detail.message`
+  and `.detail.notices` before retrying failures.
 
-After `pip install -e .` (or `pip install onshape-cli`) the command is
-`onshape-cli`. Without installing, run it as a module from the repo root:
-`python -m onshape_cli.cli`.
+## Auth
 
-**Each agent Bash call is a fresh non-interactive shell — `alias` and shell
-functions do NOT persist or even expand. Do not rely on an alias; type the full
-command every time** (e.g. `python -m onshape_cli.cli ...`, or set
-`PY="python -m onshape_cli.cli"` and use `$PY` *within the same Bash call*).
-Examples below abbreviate the command as `onshape-cli`.
+Create an API key at `https://dev.onshape.com` -> API keys.
 
-### Credentials (automatic)
-Get an API key pair at https://dev.onshape.com → API keys. Resolved in order:
-`--access-key`/`--secret-key` → `ONSHAPE_ACCESS_KEY`/`ONSHAPE_SECRET_KEY` env →
-the `onshape` block in `~/.claude/mcp.json` (if present).
+Credential lookup order:
 
-### Targeting
-Most commands take `--doc <documentId> --ws <workspaceId> --elem <elementId>`.
-`ONSHAPE_DOC`/`ONSHAPE_WS`/`ONSHAPE_ELEM` set defaults, but env does NOT persist
-across separate Bash calls — re-export each call or pass flags explicitly.
-Get IDs from `list-documents` → `find-part-studios`, or a cad.onshape.com URL
-(`.../documents/{doc}/w/{workspace}/e/{element}`).
+1. `--access-key` / `--secret-key`
+2. `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY`
+3. `~/.onshape/credentials.json` or `ONSHAPE_CONFIG`
+4. Linux `$XDG_CONFIG_HOME/onshape/credentials.json`
+5. `~/.claude/mcp.json` `onshape` block
 
-### Output
-JSON on stdout: `{"ok": true, "result": ...}` or
-`{"ok": false, "error": ..., "detail": ...}` (read `detail.message`). Creation
-commands return ids in `result`; capture and reuse them.
-
----
-
-## 2. Selecting edges/faces (the key idea)
-
-Geometry is chosen with a **FeatureScript query**, evaluated server-side — you
-rarely need raw IDs. fillet/chamfer/shell/boolean/mirror/patterns share:
-`--all`, `--feature <featureId>`, `--circular`, `--query "<FeatureScript>"`,
-`--edges id1,id2` / `--faces id1,id2`.
-Common: all bodies `query = qAllModifiableSolidBodies();`; faces of a feature
-`query = qCreatedBy(makeId("FID"), EntityType.FACE);`.
-Plane IDs: **Front = JCC, Top = JDC, Right = JEC**.
-
----
-
-## 3. Commands (75)
-
-### Documents, discovery & versioning
-- `list-documents [--limit N] [--filter all|owned|created|shared]`
-- `search-documents <query>`, `get-document --doc D`,
-  `get-document-summary --doc D`
-- `get-elements --doc D --ws W [--type PARTSTUDIO]`,
-  `find-part-studios --doc D --ws W [--name PAT]`
-- `get-parts`, `get-features [--configuration C]`, `get-body-details`, `get-assembly`
-- `get-feature-specs` — authoritative parameter schemas for every feature (use before raw `add-feature`)
-- `get-sketch-info [--sketch SID]`
-- `get-variables`, `set-variable --name x --expression "1 in"`
-- `create-document --name "X" --public`, `delete-document --doc D`
-  — new/delete a document. ⚠️ **Free Onshape accounts can only create PUBLIC
-  documents — always pass `--public`; a private document returns HTTP 409.**
-  `create-document` returns `result.id` and `result.defaultWorkspace.id`.
-- `update-document --doc D [--name N] [--description X]`
-- `get-workspaces --doc D`, `list-versions --doc D`
-- `create-version --doc D --ws W --name v1` — make a version before cross-document inserts & drawings
-
-### Part studio management
-`create-part-studio --name "X"` (returns `result.response.id`),
-`delete-feature --feature FID`, `delete-element`,
-`eval-featurescript --script '<FS>'`.
-
-### Raw feature access (power tools)
-When a built-in command doesn't cover a feature, discover its params with
-`get-feature-specs`, then POST the feature JSON directly. The envelope is a
-`BTFeatureDefinitionCall-1406` wrapping a `BTMFeature-134`; geometry is selected
-with FeatureScript queries.
-- `add-feature (--json '<envelope>' | --json-file FILE)`
-- `update-feature --feature FID (--json ... | --json-file FILE)`
-- `rollback --index N` (`-1` = end of feature list)
-
-### Sketching (inches)
-`sketch-rectangle --plane Top --corner1 0,0 --corner2 2,1`,
-`sketch-circle --plane Front --center 0,0 --radius 0.5`,
-`sketch-line --start 0,0 --end 1,0`,
-`create-sketch --plane Front --entities '<JSON: line|circle|rectangle>'`.
-
-### Solids
-`extrude --sketch FID --depth 0.5 [--op NEW|ADD|REMOVE|INTERSECT]`,
-`hole --sketch FID --depth 1`, `thicken --sketch FID --thickness 0.1`,
-`revolve --sketch FID --axis-ids EDGEID` (experimental).
-
-### Edge/face treatments
-`fillet --all --radius 0.06` (also `--feature`/`--circular`/`--query`/`--edges`),
-`chamfer --all --width 0.08`, `shell --thickness 0.06 --query '<faces>'`.
-
-### Multi-body & patterns
-`boolean --op UNION|SUBTRACTION|INTERSECTION --tools '<query>'`,
-`mirror --entities '<query>' --plane-ids JEC`,
-`linear-pattern --entities '<query>' --direction-ids EDGEID --distance 1 --count 3`,
-`circular-pattern --entities '<query>' --axis-ids EDGEID --count 6`,
-`offset-plane --base-ids JCC --offset 1.0`.
-
-### Images (PNG output)
-`thumbnail-info --elem E` (lists rendered sizes + hrefs),
-`get-thumbnail --elem E --out preview.png [--size 600x340|300x300|70x40]`
-(downloads the rendered thumbnail; Onshape renders them async, so a brand-new
-element may briefly have none — retry shortly),
-`shaded-view --elem E --out render.png [--kind partstudios|assemblies] [--width 600] [--height 340] [--view-matrix "<12 floats>"] [--no-edges] [--configuration C]`
-(server-rendered isometric shaded image — great for an agent to *see* what it built).
-
-### Geometry / measure / export
-`measure --doc D --ws W --elem E` — **fastest dimension check**; returns clean
-`{bodies, bbox:{x,y,z,min,max}, volume_in3}` in inches (no FeatureScript needed).
-Use it to verify a build instead of hand-writing `evBox3d`. ⚠️ `bbox` axes are
-**world** axes — for a Front-plane profile, `z` is the height and `y` is the
-extrude depth (see *Building from a side profile* below), not what you'd guess.
-`get-edges`, `find-circular-edges [--radius R]`, `find-edges-by-feature --feature FID`,
-`mass-properties`, `export-stl --out part.stl [--resolution coarse|medium|fine]`,
-`export --out part.step --format STEP` (also IGES/3MF/PARASOLID).
-`eval-featurescript --script "<FS>"` returns **decoded** JSON in `result.value`
-by default (`--raw` for the raw BTFSValue tree). A `null` value or `ok:false`
-means the script **errored** — the reason is in `detail.notices` (see
-*FeatureScript pitfalls* below); it is not a transient, so read it.
-
----
-
-## 4. Worked example — existing document → part → STL
+Useful commands:
 
 ```bash
-# Create a new public document (free accounts must use --public), or use an
-# existing one (list-documents). Returns result.id + result.defaultWorkspace.id.
-onshape-cli create-document --name "Part" --public   # -> DOC + WS
-DOC=...; WS=...
-ELEM=$(onshape-cli create-part-studio --doc $DOC --ws $WS --name "Part" | jq -r .result.response.id)
-
-SK=$(onshape-cli sketch-rectangle --doc $DOC --ws $WS --elem $ELEM --plane Top --corner1 0,0 --corner2 3,2 | jq -r .result.featureId)
-EX=$(onshape-cli extrude --doc $DOC --ws $WS --elem $ELEM --sketch $SK --depth 0.25 | jq -r .result.featureId)
-onshape-cli fillet --doc $DOC --ws $WS --elem $ELEM --feature $EX --radius 0.1
-onshape-cli export-stl --doc $DOC --ws $WS --elem $ELEM --out part.stl
+onshape-cli login
+onshape-cli config show
+onshape-cli logout
 ```
 
----
+For scripted agents, prefer env vars or explicit flags. `ONSHAPE_BASE_URL` or
+`--base-url` can override the API base URL.
 
-## 5. Status
+## Targeting
 
-**Verified working:** create/delete part studio, sketch, extrude, hole, thicken,
-fillet (`--all`/`--feature`/`--circular`), chamfer, shell (with a face query),
-boolean (union), mirror, linear-pattern, circular-pattern, get-edges,
-find-edges-by-feature, mass-properties, export-stl, export STEP, all discovery,
-variables, delete-feature, delete-element.
+Most geometry commands need a document, workspace, and element:
 
-**Documents (free-account note):** `create-document`/`delete-document` are
-verified working **with `--public`**. On a free Onshape account a *private*
-document (the default) returns HTTP 409 — always pass `--public`. Paid accounts
-can create private docs too.
+```bash
+--doc <documentId> --ws <workspaceId> --elem <elementId>
+```
 
-**Patterns need a real edge** for `--direction-ids`/`--axis-ids` (from
-`get-edges`); a construction-line query won't resolve.
+You can also set `ONSHAPE_DOC`, `ONSHAPE_WS`, and `ONSHAPE_ELEM` inside the same
+shell command. Extract ids from URLs shaped like:
 
-**Experimental:** `revolve`, `offset-plane` — may be rejected on regen; check the
-returned `featureStatus` or use the Onshape UI.
+```text
+https://cad.onshape.com/documents/<doc>/w/<workspace>/e/<element>
+```
 
----
+Discovery flow:
 
-## 6. Gotchas
-- Prefer query-based selection over fetching IDs; fetch IDs only for pattern
-  direction/axis.
-- Don't chamfer/shell **all** edges of an already-filleted body.
-- `shell` needs ≥1 face to remove.
-- `export-stl` is fast/synchronous (best for printing); `export` uses the async
-  translation API for STEP/3MF/IGES/PARASOLID. STEP and STL are reliable; 3MF
-  async export has failed ("Invalid 3MF detail parameters") — prefer STL/STEP.
-- Lengths are inches, angles degrees.
+```bash
+onshape-cli list-documents --limit 10
+onshape-cli search-documents "name"
+onshape-cli get-document-summary --doc D
+onshape-cli get-elements --doc D --ws W --type PARTSTUDIO
+onshape-cli find-part-studios --doc D --ws W --name "Part"
+```
 
-### Working cleanly (lessons from a messy run)
-- **Build a part as ONE closed-`line`-loop profile sketch + ONE `extrude --op NEW`**
-  rather than chaining `--op ADD`/`REMOVE`. `create-sketch` `rectangle` is only for
-  axis-aligned boxes; an arbitrary side profile = all `line` segments forming a loop.
-- **When scripting a multi-step build, drive the API in ONE process** and capture
-  `result.id`/`defaultWorkspace.id` once; threading IDs through many separate shell
-  calls is fragile.
-- **Search before creating** (`search-documents`/`list-documents`) so re-runs don't
-  spawn `Name (1)`, `Name (1) (1)` duplicates.
-- **Verify with `measure`** after each shaping step (check `bodies` + `bbox`).
-- **Then look at it.** `measure` confirms numbers, not shape — render a
-  `shaded-view` (front + isometric) and actually inspect it. A part can measure
-  correct and still have the wrong hole/slot/orientation; only a render catches that.
-- To **edit** an existing model, target its `--doc/--ws/--elem` directly — never
-  recreate it; that's how you avoid overwriting or duplicating the original.
+Free Onshape accounts can create only public documents:
 
-### Building from a side profile — axes (read before sketching a profile)
-A sketch uses its plane's two in-plane axes; `extrude --depth` pushes along the
-plane **normal** (the 3rd axis). For the **Front plane (JCC)**: sketch-X → world X
-(horizontal), sketch-Y → world **Z = height (up)**, and `--depth` → world **Y =
-the side-to-side / into-the-screen thickness**. Consequence: in `measure`'s
-`bbox`, **`z` is height and `y` is the extrude depth** — counterintuitive, double-check it.
-- Decide up front which real dimension is height vs. depth vs. width, map each to
-  sketch-X / sketch-Y / `--depth` **before** writing points, and confirm with
-  `measure` + a render.
-- When a user annotates a dimension on a render, the arrow is in **that on-screen
-  view's** axes — translate it to your sketch X/Y. And "height" of a cradle/cup
-  part often means *up to the seating surface*, not the overall part height —
-  confirm which if there's any doubt.
+```bash
+onshape-cli create-document --name "Agent build" --public
+```
 
-### FeatureScript pitfalls (`eval-featurescript` / `measure`)
-- A `null` / `ok:false` result is a **script error**, not a flake — the message
-  is in `detail.notices` (e.g. type `SEMANTIC`). Read it before retrying.
-- **Map-key vs. variable name clash:** `var vol = …; return { vol: vol };` is
-  rejected (*"Cannot use vol as map key…"*). Use a distinct key (`vol_in3`) or
-  quote it (`'vol'` / `(vol)`).
-- **Seed accumulators with a typed zero**, not plain `0`: `var v = 0; v += evVolume(...)`
-  throws a units mismatch. Prefer one call over all bodies —
-  `evVolume(context, {entities: qAllModifiableSolidBodies()})` — or seed `0 * meter^3`.
+The result includes `result.id` and `result.defaultWorkspace.id`.
 
-## 7. Source & extending
-`onshape_cli/cli.py` (dispatcher), `onshape_cli/builders/advanced.py` (feature
-builders + helpers `feature_call`/`p_query`/`p_quantity`/`p_enum`/`p_bool`),
-`onshape_cli/api/`. Confirm a feature's parameters from the authoritative
-`featurespecs` endpoint (`scripts/introspect2.py` dumps them), add a `build_*` and
-a subcommand, then verify with `scripts/final_test.py <doc> <ws>`.
+## Core Workflow
+
+For new parts:
+
+1. Search before creating, so reruns do not create duplicates.
+2. Create or find a document and part studio.
+3. Make one clean, closed sketch when possible.
+4. Add features and capture returned feature ids.
+5. Verify with `measure`.
+6. Render with `shaded-view` or `get-thumbnail`.
+7. Export only after measurement and visual inspection.
+
+Minimal example:
+
+```bash
+DOC=$(onshape-cli create-document --name "Bracket" --public | jq -r .result.id)
+WS=$(onshape-cli get-document --doc "$DOC" | jq -r .result.defaultWorkspace.id)
+ELEM=$(onshape-cli create-part-studio --doc "$DOC" --ws "$WS" --name "Part" | jq -r .result.response.id)
+SK=$(onshape-cli sketch-rectangle --doc "$DOC" --ws "$WS" --elem "$ELEM" --plane Top --corner1 0,0 --corner2 3,2 | jq -r .result.featureId)
+EX=$(onshape-cli extrude --doc "$DOC" --ws "$WS" --elem "$ELEM" --sketch "$SK" --depth 0.25 | jq -r .result.featureId)
+onshape-cli fillet --doc "$DOC" --ws "$WS" --elem "$ELEM" --feature "$EX" --radius 0.1
+onshape-cli measure --doc "$DOC" --ws "$WS" --elem "$ELEM"
+onshape-cli shaded-view --doc "$DOC" --ws "$WS" --elem "$ELEM" --out render.png
+onshape-cli export-stl --doc "$DOC" --ws "$WS" --elem "$ELEM" --out bracket.stl
+```
+
+## Geometry Selection
+
+Edges and faces are usually selected with FeatureScript queries evaluated by
+Onshape. Prefer queries over raw ids unless a command needs an axis or direction.
+
+Common selectors:
+
+- all solid bodies: `qAllModifiableSolidBodies();`
+- faces created by feature: `qCreatedBy(makeId("FID"), EntityType.FACE);`
+- edges created by feature: `qCreatedBy(makeId("FID"), EntityType.EDGE);`
+
+Shared selection flags:
+
+- `--all`: all edges on all solid bodies
+- `--feature FID`: edges from a feature
+- `--circular`: circular or arc edges
+- `--query "<FeatureScript query>"`
+- `--edges id1,id2` or `--faces id1,id2`
+
+Default plane ids: Front `JCC`, Top `JDC`, Right `JEC`.
+
+## Command Map
+
+Documents: `list-documents`, `search-documents`, `get-document`,
+`get-document-summary`, `create-document`, `delete-document`,
+`update-document`, `get-elements`, `find-part-studios`, `get-workspaces`,
+`list-versions`, `create-version`.
+
+Part studios: `create-part-studio`, `delete-element`, `delete-feature`,
+`get-parts`, `get-features`, `get-feature-specs`, `get-sketch-info`,
+`get-body-details`, `validate-partstudio`, `rollback`.
+
+Sketching: `sketch-rectangle`, `sketch-circle`, `sketch-line`,
+`sketch-circle-axis`, `sketch-candy-cane-path`, `create-sketch`.
+
+Solids: `extrude`, `hole`, `thicken`, `revolve`, `sweep`, `draft`.
+
+Edges/faces: `fillet`, `chamfer`, `shell`.
+
+Booleans/patterns: `boolean`, `boolean-union`, `mirror`, `linear-pattern`,
+`circular-pattern`, `offset-plane`.
+
+Assemblies: `create-assembly`, `insert-instance`, `get-assembly-features`,
+`assembly-add-feature`, `assembly-mate-connector`, `assembly-mate`,
+`assembly-group`, `get-bom`, `assembly-mass-properties`, `transform-instance`,
+`delete-instance`.
+
+Drawings: `create-drawing`, `get-drawing-views`, `export-drawing`.
+
+Feature Studios: `create-feature-studio`, `get-feature-studio`,
+`set-feature-studio`, `get-feature-studio-specs`.
+
+Metadata/config: `get-metadata`, `set-metadata`, `get-variables`,
+`set-variable`, `get-configuration`, `encode-configuration`.
+
+Images/export/measure: `thumbnail-info`, `get-thumbnail`, `shaded-view`,
+`measure`, `get-edges`, `find-circular-edges`, `find-edges-by-feature`,
+`mass-properties`, `export-stl`, `export`.
+
+Raw feature access: `add-feature`, `update-feature`,
+`eval-featurescript`. Use `get-feature-specs` first, then pass a
+`BTFeatureDefinitionCall-1406` envelope as `--json` or `--json-file`.
+
+## CAD Rules That Prevent Bad Builds
+
+- Units are inches; angles are degrees.
+- For 3D printing, `export-stl` is the simplest reliable export. Use `export`
+  for STEP/IGES/3MF/PARASOLID.
+- Cross-document inserts and drawings require a version: run `create-version`.
+- Patterns need real edge ids for `--direction-ids` or `--axis-ids`; get them
+  with `get-edges`.
+- Do not chamfer or shell every edge of a body that was already heavily filleted.
+- `shell` needs at least one face to remove.
+- `revolve` and `offset-plane` can be regen-rejected; inspect `featureStatus`.
+- Prefer one closed profile sketch plus one `extrude --op NEW` over many fragile
+  additive/removal steps.
+- When sketching on Front, sketch X maps to world X, sketch Y maps to world Z,
+  and extrude depth maps to world Y. In `measure`, `bbox.z` is height and
+  `bbox.y` is depth for Front-plane profiles.
+- `measure` verifies dimensions; rendered images verify shape and orientation.
+- To edit an existing model, target its existing `doc/ws/elem`; do not recreate
+  or overwrite it.
+
+## Debugging
+
+- `ok:false` or `result.value: null` is usually a real API or FeatureScript
+  error, not a transient. Inspect `detail.message` and `detail.notices`.
+- If a FeatureScript map key conflicts with a variable name, quote the key or use
+  a different key name.
+- Seed FeatureScript accumulators with typed zero values when adding measured
+  quantities.
+- If unsure about a feature payload, run `get-feature-specs` and use
+  `add-feature` or `update-feature` with JSON.

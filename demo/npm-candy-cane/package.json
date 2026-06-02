@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "onshape": "https://registry.npmjs.org/onshape/-/onshape-0.1.1.tgz"
+    "onshape": "https://registry.npmjs.org/onshape/-/onshape-0.1.3.tgz"
   }
 }

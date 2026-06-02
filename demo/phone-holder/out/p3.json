@@ -1,0 +1,207 @@
+{
+  "ok": true,
+  "result": {
+    "featureId": "FHA2SRbFUmcfOKc_1",
+    "response": {
+      "btType": "BTFeatureDefinitionResponse-1617",
+      "rejectMicroversionSkew": false,
+      "microversionSkew": false,
+      "featureState": {
+        "btType": "BTFeatureState-1688",
+        "featureStatus": "OK",
+        "inactive": false
+      },
+      "feature": {
+        "btType": "BTMSketch-151",
+        "suppressionState": null,
+        "parameterLibraries": [],
+        "returnAfterSubfeatures": false,
+        "subFeatures": [],
+        "entities": [
+          {
+            "btType": "BTMSketchCurveSegment-155",
+            "geometry": {
+              "btType": "BTCurveGeometryLine-117",
+              "pntX": 0.033655,
+              "pntY": -0.00254,
+              "dirX": 1,
+              "dirY": 0
+            },
+            "isConstruction": false,
+            "isFromSplineControlPolygon": false,
+            "offsetCurveExtensions": [],
+            "startPointId": "port.0.start",
+            "endPointId": "port.0.end",
+            "startParam": 0,
+            "endParam": 0.016510000000000004,
+            "isFromEndpointSplineHandle": false,
+            "centerId": "",
+            "isFromSplineHandle": false,
+            "internalIds": [],
+            "curvedTextIds": [],
+            "namespace": "",
+            "name": "",
+            "index": 1,
+            "parameters": [],
+            "nodeId": "ME1O2cXfmDDCPpTvF",
+            "entityId": "port.0"
+          },
+          {
+            "btType": "BTMSketchCurveSegment-155",
+            "geometry": {
+              "btType": "BTCurveGeometryLine-117",
+              "pntX": 0.050165,
+              "pntY": -0.00254,
+              "dirX": 0,
+              "dirY": 1
+            },
+            "isConstruction": false,
+            "isFromSplineControlPolygon": false,
+            "offsetCurveExtensions": [],
+            "startPointId": "port.1.start",
+            "endPointId": "port.1.end",
+            "startParam": 0,
+            "endParam": 0.018288,
+            "isFromEndpointSplineHandle": false,
+            "centerId": "",
+            "isFromSplineHandle": false,
+            "internalIds": [],
+            "curvedTextIds": [],
+            "namespace": "",
+            "name": "",
+            "index": 2,
+            "parameters": [],
+            "nodeId": "MmPBb3Kb/hZ23ORmk",
+            "entityId": "port.1"
+          },
+          {
+            "btType": "BTMSketchCurveSegment-155",
+            "geometry": {
+              "btType": "BTCurveGeometryLine-117",
+              "pntX": 0.050165,
+              "pntY": 0.015747999999999998,
+              "dirX": -1,
+              "dirY": 0
+            },
+            "isConstruction": false,
+            "isFromSplineControlPolygon": false,
+            "offsetCurveExtensions": [],
+            "startPointId": "port.2.start",
+            "endPointId": "port.2.end",
+            "startParam": 0,
+            "endParam": 0.016510000000000004,
+            "isFromEndpointSplineHandle": false,
+            "centerId": "",
+            "isFromSplineHandle": false,
+            "internalIds": [],
+            "curvedTextIds": [],
+            "namespace": "",
+            "name": "",
+            "index": 3,
+            "parameters": [],
+            "nodeId": "MqEg/bBdrfTlHpsxL",
+            "entityId": "port.2"
+          },
+          {
+            "btType": "BTMSketchCurveSegment-155",
+            "geometry": {
+              "btType": "BTCurveGeometryLine-117",
+              "pntX": 0.033655,
+              "pntY": 0.015747999999999998,
+              "dirX": 0,
+              "dirY": -1
+            },
+            "isConstruction": false,
+            "isFromSplineControlPolygon": false,
+            "offsetCurveExtensions": [],
+            "startPointId": "port.3.start",
+            "endPointId": "port.3.end",
+            "startParam": 0,
+            "endParam": 0.018288,
+            "isFromEndpointSplineHandle": false,
+            "centerId": "",
+            "isFromSplineHandle": false,
+            "internalIds": [],
+            "curvedTextIds": [],
+            "namespace": "",
+            "name": "",
+            "index": 4,
+            "parameters": [],
+            "nodeId": "MEQjm4lbVYbbGlsfm",
+            "entityId": "port.3"
+          }
+        ],
+        "constraints": [],
+        "namespace": "",
+        "name": "Cable port profile",
+        "parameters": [
+          {
+            "btType": "BTMParameterQueryList-148",
+            "queries": [
+              {
+                "btType": "BTMIndividualQuery-138",
+                "queryStatement": null,
+                "queryString": "query=qCompressed(1.0,\"%B5$QueryM4Sa$entityTypeBa$EntityTypeS4$FACESb$historyTypeS8$CREATIONSb$operationIdB2$IdA1S5.7$FrontplaneOpS9$queryTypeS5$DUMMY\",id);",
+                "nodeId": "Mc2vYfYPWCDcvoy5F"
+              }
+            ],
+            "filter": {
+              "btType": "BTOrFilter-167",
+              "operand1": {
+                "btType": "BTOrFilter-167",
+                "operand1": {
+                  "btType": "BTAndFilter-110",
+                  "operand1": {
+                    "btType": "BTGeometryFilter-130",
+                    "geometryType": "PLANE"
+                  },
+                  "operand2": {
+                    "btType": "BTFlatSheetMetalFilter-3018",
+                    "allows": "MODEL_ONLY"
+                  }
+                },
+                "operand2": {
+                  "btType": "BTAndFilter-110",
+                  "operand1": {
+                    "btType": "BTAndFilter-110",
+                    "operand1": {
+                      "btType": "BTSMDefinitionEntityTypeFilter-1651",
+                      "smDefinitionEntityType": "FACE"
+                    },
+                    "operand2": {
+                      "btType": "BTFlatSheetMetalFilter-3018",
+                      "allows": "MODEL_AND_FLATTENED"
+                    }
+                  },
+                  "operand2": {
+                    "btType": "BTGeometryFilter-130",
+                    "geometryType": "PLANE"
+                  }
+                }
+              },
+              "operand2": {
+                "btType": "BTBodyTypeFilter-112",
+                "bodyType": "MATE_CONNECTOR"
+              }
+            },
+            "nodeId": "MaGfFKvvUJNW9hB2Y",
+            "parameterId": "sketchPlane",
+            "parameterName": "",
+            "libraryRelationType": "NONE"
+          }
+        ],
+        "nodeId": "MdBrz4KgSJQWPVcon",
+        "featureId": "FHA2SRbFUmcfOKc_1",
+        "suppressed": false,
+        "featureType": "newSketch"
+      },
+      "serializationVersion": "1.2.19",
+      "sourceMicroversion": "5dbda7a3d26428c95e66045f",
+      "libraryVersion": 0
+    },
+    "validation": {
+      "featureId": "FHA2SRbFUmcfOKc_1",
+      "featureStatus": "OK"
+    }
+  }
+}

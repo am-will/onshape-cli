@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "result": [
+    {
+      "id": "bb7693687d00ca9f2ad77b42",
+      "name": "Part Studio 1",
+      "element_type": "Part Studio",
+      "data_type": "onshape/partstudio",
+      "thumbnail": null
+    },
+    {
+      "id": "24760acc96a5a48e64869922",
+      "name": "Assembly 1",
+      "element_type": "Assembly",
+      "data_type": "onshape/assembly",
+      "thumbnail": null
+    },
+    {
+      "id": "12f9372f7339415edca850d9",
+      "name": "BOM : Assembly 1",
+      "element_type": "Bill Of Materials",
+      "data_type": "onshape/billofmaterials",
+      "thumbnail": null
+    }
+  ]
+}
