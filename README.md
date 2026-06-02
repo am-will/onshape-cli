@@ -57,14 +57,14 @@ pip install -e '.[keychain]'
 Python with `uvx`:
 
 ```bash
-# after the Python package is published to PyPI
+# PyPI package
 uvx onshape-cli --help
 uvx onshape-cli list-documents --limit 5
 
-# from GitHub without a PyPI publish
+# GitHub source
 uvx --from git+https://github.com/am-will/onshape-cli onshape-cli --help
 
-# from a local checkout
+# local checkout
 uvx --from /path/to/onshape-cli onshape-cli --help
 ```
 
